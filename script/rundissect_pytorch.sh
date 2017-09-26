@@ -6,7 +6,7 @@ ARCH='alexnet' # [alexnet,squeezenet1_1,resnet18,...]. It should work for all th
 LAYERS="features"
 NUMCLASSES=1000
 DATASET=dataset/broden1_227
-WEIGHTS="none"
+WEIGHTS="None"
 
 # default setting
 THRESHOLD=0.04
@@ -63,9 +63,9 @@ python src/netprobe_pytorch.py \
     --blobs $LAYERS \
     --mean $MEAN \
     --definition $ARCH \
-    --weights $WEIGHTS \
     --num_classes $NUMCLASSES \
     --dataset $DATASET
+# --weights $WEIGHTS
 
 [[ $? -ne 0 ]] && exit $?
 echo netprobe > $WORKDIR/$DIR/job.done

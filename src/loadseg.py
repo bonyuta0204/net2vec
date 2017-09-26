@@ -11,6 +11,7 @@ from multiprocessing import Pool, cpu_count
 from multiprocessing.pool import ThreadPool
 from scipy.ndimage.interpolation import zoom
 
+BASE_DIR = '/data/ruthfong/NetDissect'
 class AbstractSegmentation:
     def all_names(self, category, j):
         raise NotImplementedError
@@ -57,7 +58,7 @@ class SegmentationData(AbstractSegmentation):
     each have a separate c_*.csv file describing a dense coding of labels.
     '''
     def __init__(self, directory, categories=None, require_all=False):
-        directory = os.path.expanduser(directory)
+        directory = os.path.join(BASE_DIR, os.path.expanduser(directory))
         self.directory = directory
         with open(os.path.join(directory, 'index.csv')) as f:
             self.image = [decode_index_dict(r) for r in DictUnicodeReader(f)]
