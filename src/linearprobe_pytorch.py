@@ -123,8 +123,8 @@ def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw,
         input = torch.Tensor((activations[idx] > thresh).astype(float))
         input_var = (Variable(input.cuda(), volatile=volatile) if cuda
                 else Variable(input, volatile=volatile))
-        target = torch.Tensor([np.squeeze((rec[label_categories[idx[j]]] 
-                == label_i).astype(float)) 
+        target = torch.Tensor([np.max((rec[label_categories[idx[j]]] 
+                == label_i).astype(float), axis=0) 
                 if type(rec[label_categories[idx[j]]]) is np.ndarray 
                 else np.ones((sh, sw))
                 for j, rec in enumerate(batch)]) 
