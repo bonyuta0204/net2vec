@@ -5,6 +5,7 @@ import upsample
 from labelprobe import onehot, primary_categories_per_index, cached_memmap
 from indexdata import has_image_to_label, load_image_to_label, create_image_to_label
 
+import os
 import time
 import math
 
@@ -356,9 +357,9 @@ if __name__ == '__main__':
                 default=30,
                 help='the number of epochs to train for')
         parser.add_argument(
-                '--gpu',
-                action='store_true',
-                default=False,
+                 '--gpu',
+                type=int,
+                default=None,
                 help='use GPU for training')
 
         args = parser.parse_args()
@@ -366,13 +367,23 @@ if __name__ == '__main__':
             labels = range(args.start, args.end)
         else:
             labels = args.labels
+
+        gpu = args.gpu
+        cuda = True if gpu is not None else False
+        use_mult_gpu = isinstance(gpu, list)
+        if cuda:
+            if use_mult_gpu:
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu).strip('[').strip(']')
+            else:
+                os.environ['CUDA_VISIBLE_DEVICES'] = '%d' % gpu
+        print torch.cuda.device_count(), use_mult_gpu, cuda
         for blob in args.blobs:
             for label_i in labels:
                 linear_probe(args.directory, blob, int(label_i), 
                         batch_size=args.batch_size,
                         ahead=args.ahead, quantile=args.quantile,
                         num_epochs=args.num_epochs, lr=args.learning_rate, 
-                        cuda=args.gpu)
+                        cuda=cuda)
 
     except:
         traceback.print_exc(file=sys.stdout)

@@ -12,6 +12,10 @@ from multiprocessing.pool import ThreadPool
 from scipy.ndimage.interpolation import zoom
 
 BASE_DIR = '/home/ruthfong/NetDissect'
+if not os.path.exists(BASE_DIR):
+    BASE_DIR = '/scratch/local/ssd/ruthfong/NetDissect'
+    assert(os.path.exists(BASE_DIR))
+
 class AbstractSegmentation:
     def all_names(self, category, j):
         raise NotImplementedError
