@@ -16,8 +16,8 @@ import time
 import sys
 
 os.environ['GLOG_minloglevel'] = '2'
-import caffe
-from caffe.proto import caffe_pb2
+#import caffe
+#from caffe.proto import caffe_pb2
 from google.protobuf import text_format
 from scipy.misc import imresize, imread
 from scipy.ndimage.filters import gaussian_filter
@@ -29,8 +29,8 @@ import upsample
 import rotate
 import expdir
 
-caffe.set_mode_gpu()
-caffe.set_device(0)
+#caffe.set_mode_gpu()
+#caffe.set_device(0)
 
 def create_probe(
         directory, dataset, definition, weights, mean, blobs,
@@ -73,8 +73,18 @@ def create_probe(
     def hook_size(module, input, output):
         size_blobs_output.append(output.data.size())
     input_sample = V(torch.randn(1,3,args.input_size,args.input_size))
+    def get_pytorch_module(net, blob):
+        modules = blob.split('.')
+        if len(modules) == 1:
+            return net._modules.get(blob)
+        else:
+            curr_m = net
+            for m in modules:
+                curr_m = curr_m._modules.get(m)
+            return curr_m
     for blob in blobs:
-        net._modules.get(blob).register_forward_hook(hook_size)
+        get_pytorch_module(net, blob).register_forward_hook(hook_size)
+        #net._modules.get(blob).register_forward_hook(hook_size)
 
     output_sample = net(input_sample)
 
@@ -136,7 +146,8 @@ def create_probe(
     def hook_feature(module, input, output):
         features_blobs.append(output.data.cpu().numpy())
     for blob in blobs:
-        net._modules.get(blob).register_forward_hook(hook_feature)
+        get_pytorch_module(net, blob).register_forward_hook(hook_feature)
+        #net._modules.get(blob).register_forward_hook(hook_feature)
 
     for batch in pf.tensor_batches(bgr_mean=mean):
         del features_blobs[:] # clear up the feature basket

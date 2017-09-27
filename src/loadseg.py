@@ -11,7 +11,7 @@ from multiprocessing import Pool, cpu_count
 from multiprocessing.pool import ThreadPool
 from scipy.ndimage.interpolation import zoom
 
-BASE_DIR = '/data/ruthfong/NetDissect'
+BASE_DIR = '/home/ruthfong/NetDissect'
 class AbstractSegmentation:
     def all_names(self, category, j):
         raise NotImplementedError
@@ -384,7 +384,7 @@ class SegmentationPrefetcher:
     batches of images and segmentations calling fetch_batch().
     '''
     def __init__(self, segmentation, split=None, randomize=False,
-            segmentation_shape=None, categories=None, once=False,
+            segmentation_shape=None, categories=None, indexes=None,once=False,
             start=None, end=None, batch_size=4, ahead=24, thread=False):
         '''
         Constructor arguments:
@@ -418,7 +418,10 @@ class SegmentationPrefetcher:
             start = 0
         if end is None:
             end = segmentation.size()
-        self.indexes = range(start, end)
+        if indexes is None:
+            self.indexes = range(start, end)
+        else:
+            self.indexes = indexes
         if split:
             self.indexes = [i for i in self.indexes
                     if segmentation.split(i) == split]
@@ -444,17 +447,22 @@ class SegmentationPrefetcher:
                 self.segmentation_shape)
         self.index += 1
         if self.index >= len(self.indexes):
-            if self.once:
-                self.index = -1
-            else:
-                self.index = 0
-                if self.randomize:
-                    # Reshuffle every time through
-                    self.random.shuffle(self.indexes)
+            self.index = -1
+            if not self.once and self.randomize:
+                self.random.shuffle(self.indexes)
+            #if self.once:
+            #    self.index = -1
+            #else:
+            #    self.index = 0
+            #    if self.randomize:
+            #        # Reshuffle every time through
+            #        self.random.shuffle(self.indexes)
         return result
 
     def batches(self):
         '''Iterator for all batches'''
+        # reset to the first batch (important for self.once=False)
+        self.index = 0
         while True:
             batch = self.fetch_batch()
             if batch is None:

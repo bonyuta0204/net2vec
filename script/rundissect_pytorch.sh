@@ -28,6 +28,7 @@ mkdir -p $WORKDIR/$DIR
 if [ -z "${FORCE##*pid*}" ] || [ ! -e $WORKDIR/$DIR/job.pid ]
 then
     exec &> >(tee -a "$WORKDIR/$DIR/job.log")
+    #tee -a "$WORKDIR/$DIR/job.log"
     echo "Beginning pid $$ on host $(hostname) at $(date)"
     trap "rm -rf $WORKDIR/$DIR/job.pid $WORKDIR/$DIR/job.host" EXIT
     echo $$ > $WORKDIR/$DIR/job.pid
