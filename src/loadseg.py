@@ -546,7 +546,7 @@ class SegmentationPrefetcher:
             if result is not None:
                 result.wait(0.001)
         self.pool.close()
-        self.pool.cancel_join_thread()
+        #self.pool.cancel_join_thread()
 
 def prefetch_worker(d):
     if d is None:
