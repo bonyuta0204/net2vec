@@ -219,7 +219,7 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
     try:
         train_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories, 
                 split='train', indexes=label_idx, once=False, batch_size=batch_size, 
-                ahead=ahead, thread=False)
+                ahead=ahead, thread=True)
     except IndexError as err:
         print(err.args)
         return
