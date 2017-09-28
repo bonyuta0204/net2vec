@@ -292,6 +292,10 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
                 fieldmap, thresh, sh, sw, reduction, val_loader, layer, criterion,
                 optimizer, t+1, train=False, cuda=cuda, iou_threshold=0.5)
 
+    # Close segmentation prefetcher (i.e. close pools)
+    train_loader.close()
+    val_loader.close()
+
     # Save weights
     weights = layer.weight.data.cpu().numpy()
     weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % label_i,
