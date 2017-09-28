@@ -215,10 +215,15 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
     label_idx = np.where(image_to_label[:, label_i])[0]
     print('Total number of images containing label %d (%s): %d' % (
         label_i, label_name, len(label_idx)))
-
-    train_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories, 
-            split='train', indexes=label_idx, once=False, batch_size=batch_size, 
-            ahead=ahead, thread=True)
+    
+    try:
+        train_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories, 
+                split='train', indexes=label_idx, once=False, batch_size=batch_size, 
+                ahead=ahead, thread=False)
+    except IndexError as err:
+        print(err.args)
+        return
+    
     train_idx = train_loader.indexes
 
     sw = 0
@@ -270,9 +275,15 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
             l1_weight_decay=l1_weight_decay, l2_weight_decay=l2_weight_decay,
             nesterov=nesterov, lower_bound=lower_bound)
 
-    val_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
-            split='val', indexes=label_idx, once=False, batch_size=batch_size,
-            ahead=ahead, thread=True)
+    try:
+        val_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
+                split='val', indexes=label_idx, once=False, batch_size=batch_size,
+                ahead=ahead, thread=True)
+    except IndexError as err:
+        print(err.args)
+        train_loader.close()
+        return
+
     val_idx = val_loader.indexes
 
     val_label_categories = []

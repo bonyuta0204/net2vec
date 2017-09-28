@@ -438,11 +438,19 @@ class SegmentationPrefetcher:
         self.catmaps = [
                 segmentation.category_index_map(cat) if cat != 'image' else None
                 for cat in categories]
+        if len(self.indexes) == 0:
+            raise IndexError('No images were selected based on the filtering' 
+                    + ' conditions. Do not use this prefetcher.')
 
     def next_job(self):
         if self.index < 0:
             return None
-        j = self.indexes[self.index]
+        try:
+            j = self.indexes[self.index]
+        except:
+            print self.index
+            print len(self.indexes)
+            print self.indexes
         result = (j,
                 self.segmentation.__class__,
                 self.segmentation.metadata(j),
