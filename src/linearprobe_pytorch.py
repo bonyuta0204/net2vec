@@ -310,7 +310,7 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
     # Save weights
     weights = layer.weight.data.cpu().numpy()
     weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % label_i,
-            mode='w+', dtype=float, shape=weights.shape)
+            mode='w+', dtype='float32', shape=weights.shape)
     weights_mmap[:] = weights[:]
     ed.finish_mmap(weights_mmap)
 
