@@ -540,7 +540,7 @@ class SegmentationPrefetcher:
                 return
             self.result_queue.append(self.pool.map_async(prefetch_worker, data))
 
-    def close():
+    def close(self):
         while len(self.result_queue):
             result = self.result_queue.pop(0)
             if result is not None:
