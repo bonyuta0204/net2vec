@@ -25,13 +25,14 @@ def consolidate_probe(directory, blob, delete=False):
         try:
             label_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % l,
                     mode='r', dtype='float32')
-        except:
+            weights_mmap[l] = label_weights_mmap[:]
+        except ValueError:
             # SUPPORT LEGACY CODE, TODO: remove eventually
             label_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % l,
                     mode='r', dtype=float)
-        weights_mmap[l] = label_weights_mmap[:]
+            weights_mmap[l] = label_weights_mmap[:]
 
-    ed.finish_map(weights_mmap)
+    ed.finish_mmap(weights_mmap)
     print('Finished consolidating existing weights files ' 
             + '(Files for %d labels were missing).' % len(missing_idx))
     print(missing_idx)
@@ -53,7 +54,7 @@ if __name__ == '__main__':
     import traceback
 
     try:
-        parser = argparser.ArgumentParser()
+        parser = argparse.ArgumentParser()
         parser.add_argument('--directory', default='.')
         parser.add_argument('--blobs', nargs='*')
         parser.add_argument('--delete', action='store_true', default=False)
@@ -61,7 +62,7 @@ if __name__ == '__main__':
         args = parser.parse_args()
 
         for blob in args.blobs:
-            consolidate_probe(args.directory, args.blobs, delete=args.delete)
+            consolidate_probe(args.directory, blob, delete=args.delete)
 
     except:
         traceback.print_exc(file=sys.stdout)
