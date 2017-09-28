@@ -110,7 +110,7 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
             else:
                 idx = range(i*batch_size, N)
             i += 1
-            input = torch.Tensor(blobdata[idx])
+            input = torch.Tensor(blobdata[idx] > thresh)
             input_var = upsample(Variable(input.cuda()) if cuda else
                     Variable(input))
             target = torch.Tensor([np.max((rec[rec_labcat[j]] 
