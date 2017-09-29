@@ -15,13 +15,26 @@ from torch.autograd import Variable
 
 
 def iou_intersect_d(input, target, threshold = 0.5):
-    return torch.sum(torch.sum(torch.mul((input > threshold).float(), target), dim=3), 
-                     dim=2)
+    return torch.sum(torch.sum(torch.mul((input > threshold).float(), target), dim=-1), 
+                     dim=-1)
 
 
 def iou_union_d(input, target, threshold = 0.5):
     return torch.sum(torch.sum(torch.clamp(torch.add(target, (input > threshold).float()), 
-                                           max=1.), dim=3), dim=2)
+                                           max=1.), dim=-1), dim=-1)
+
+
+def get_seg_size(input_dim):
+    if input_dim == [227, 227]:
+        seg_size = (113, 113)
+    elif input_dim == [224, 224]:
+        seg_size = (112, 112)
+    elif input_dim == [384, 384]:
+        seg_size = (192, 192)
+    else:
+        print input_dim
+        assert(False)
+    return seg_size
 
 
 def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=None,
@@ -35,15 +48,7 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
             ed.mmap_file(blob=blob, part='single_iou')))
     # Load probe metadata
     info = ed.load_info()
-    if info.input_dim == [227, 227]:
-        seg_size = (113, 113)
-    elif info.input_dim == [224, 224]:
-        seg_size = (112, 112)
-    elif info.input_dim == [384, 384]:
-        seg_size = (192, 192)
-    else:
-        print info.input_dim
-        assert(False)
+    seg_size = get_seg_size(info.input_dim)
     # Load blob metadata
     blob_info = ed.load_info(blob=blob)
     shape = blob_info.shape
