@@ -67,7 +67,7 @@ def probe_linear(directory, blob, layer_i, batch_size=16, ahead=4, quantile=0.00
     num_imgs = len(loader.indexes)
 
     print('Probing with learned weights for label %d (%s) with %d images...' % (
-        label_i, label_name, num_imgs)
+        label_i, label_name, num_imgs))
 
     model = CustomLayer(K, upsample=True, up_size=seg_size, act=True, 
             positive=False)
