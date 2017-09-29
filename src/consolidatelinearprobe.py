@@ -14,28 +14,33 @@ def consolidate_probe(directory, blob, delete=False):
     N = ds.size() # total number of images in the dataset
     K = shape[1] # number of units for the given blob
 
-    weights_mmap = ed.open_mmap(blob=blob, part='linear_weights', mode='w+',
-            dtype='float32', shape=(L,K))
+    if ed.has_mmap(blob=blob, part='linear_weights'):
+        print('Linear weights have already been consolidated')
+    else:
+        weights_mmap = ed.open_mmap(blob=blob, part='linear_weights', mode='w+',
+                dtype='float32', shape=(L,K))
 
-    missing_idx = []
-    for l in range(L):
-        if not ed.has_mmap(blob=blob, part='label_i_%d_weights' % l):
-            missing_idx.append(l)
-            continue
-        try:
-            label_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % l,
-                    mode='r', dtype='float32')
-            weights_mmap[l] = label_weights_mmap[:]
-        except ValueError:
-            # SUPPORT LEGACY CODE, TODO: remove eventually
-            label_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % l,
-                    mode='r', dtype=float)
+        missing_idx = []
+        for l in range(L):
+            if not ed.has_mmap(blob=blob, part='label_i_%d_weights' % l):
+                missing_idx.append(l)
+                continue
+            try:
+                label_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % l,
+                        mode='r', dtype='float32', shape=(K,))
+                #weights_mmap[l] = label_weights_mmap[:]
+            except ValueError:
+                print('here')
+                # SUPPORT LEGACY CODE, TODO: remove eventually
+                label_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % l,
+                        mode='r', dtype=float, shape=(K,))
             weights_mmap[l] = label_weights_mmap[:]
 
-    ed.finish_mmap(weights_mmap)
-    print('Finished consolidating existing weights files ' 
-            + '(Files for %d labels were missing).' % len(missing_idx))
-    print(missing_idx)
+        ed.finish_mmap(weights_mmap)
+
+        print('Finished consolidating existing weights files ' 
+                + '(Files for %d labels were missing).' % len(missing_idx))
+        print(missing_idx)
 
     if delete:
         c = 0
@@ -44,8 +49,8 @@ def consolidate_probe(directory, blob, delete=False):
             if ed.has_mmap(blob=blob, part='label_i_%d_weights' % l):
                 fn = ed.mmap_filename(blob=blob, part='label_i_%d_weights' % l)
                 os.remove(fn)
-                c += 1
-        print('Removed %d weights files.' % c)
+                c_w += 1
+        print('Removed %d weights and files.' % c)
 
 
 if __name__ == '__main__':
