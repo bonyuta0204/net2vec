@@ -146,18 +146,18 @@ def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw,
 
         iou = np.true_divide(iou_intersects.sum, iou_unions.sum)[0]
 
-        #if train:
-        #    print('Epoch {0}[{1}/{2}]\t'
-        #          'Avg Loss {losses.avg:.4f}\t'
-        #          'Overall IOU {3}\t'
-        #          'Time {4}\t'.format(epoch, i, int(round(N/batch_size)), 
-        #              iou, time.time()-start, losses=losses))
-        #else:
-        #    print('Test [{0}/{1}]\t'
-        #          'Avg Loss {losses.avg:.4f}\t'
-        #          'Overall IOU {2}\t'
-        #          'Time {3}\t'.format(i, int(round(N/batch_size)), 
-        #              iou, time.time()-start, losses=losses))
+        if train:
+            print('Epoch {0}[{1}/{2}]\t'
+                  'Avg Loss {losses.avg:.4f}\t'
+                  'Overall IOU {3}\t'
+                  'Time {4}\t'.format(epoch, i, int(round(N/batch_size)), 
+                      iou, time.time()-start, losses=losses))
+        else:
+            print('Test [{0}/{1}]\t'
+                  'Avg Loss {losses.avg:.4f}\t'
+                  'Overall IOU {2}\t'
+                  'Time {3}\t'.format(i, int(round(N/batch_size)), 
+                      iou, time.time()-start, losses=losses))
 
     if train:
         print('Epoch {0}\t'
