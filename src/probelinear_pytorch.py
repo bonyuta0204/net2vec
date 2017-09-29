@@ -60,10 +60,14 @@ def probe_linear(directory, blob, layer_i, batch_size=16, ahead=4, quantile=0.00
     blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
     image_to_label = load_image_to_label(directory)
     label_idx = np.where(image_to_label[:, label_i])[0]
+
     loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
             indexes=label_idx, once=True, batch_size=batch_size, ahead=ahead,
             thread=True)
     num_imgs = len(loader.indexes)
+
+    print('Probing with learned weights for label %d (%s) with %d images...' % (
+        label_i, label_name, num_imgs)
 
     model = CustomLayer(K, upsample=True, up_size=seg_size, act=True, 
             positive=False)
