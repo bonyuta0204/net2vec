@@ -72,6 +72,7 @@ def probe_linear(directory, blob, batch_size=16, ahead=4, quantile=0.005, cuda=F
         loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
                 indexes=label_idx, once=True, batch_size=batch_size, ahead=ahead,
                 thread=True)
+        loader_idx = loader.indexes
         num_imgs = len(loader.indexes)
 
         print('Probing with learned weights for label %d (%s) with %d images...' % (
@@ -95,7 +96,7 @@ def probe_linear(directory, blob, batch_size=16, ahead=4, quantile=0.005, cuda=F
             else:
                 idx = range(i*batch_size, num_imgs)
             i += 1
-            input = torch.Tensor((blobdata[idx] > thresh).astype(float))
+            input = torch.Tensor((blobdata[loader_idx[idx]] > thresh).astype(float))
             input_var = (Variable(input.cuda(), volatile=True) if cuda else 
                     Variable(input, volatile=True))
 
