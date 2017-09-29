@@ -43,9 +43,10 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
     qcode = ('%f' % quantile).replace('0.','').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
     # Check if label probe has already been created
-    if ed.has_mmap(blob=blob, part='single_iou'):
-        print('%s already has %s, so skipping.' % (directory,
-            ed.mmap_file(blob=blob, part='single_iou')))
+    if (ed.has_mmap(blob=blob, part='single_set_ious') and 
+            ed.has_mmap(blob=blob, part='single_ind_ious')):
+        print('label_probe_pytorch.py has already been run.')
+        return
     # Load probe metadata
     info = ed.load_info()
     seg_size = get_seg_size(info.input_dim)
@@ -130,7 +131,9 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
                 target_var).data.cpu().numpy())
             iou_unions[idx] = np.squeeze(iou_union_d(input_var, 
                 target_var).data.cpu().numpy())
-            print('Batch %d/%d\tTime %f secs' % (i, N/batch_size, time.time()-start_t))
+            print('Batch %d/%d\tTime %f secs\tAvg Ind IOU %f\t' % (i, N/batch_size, 
+                time.time()-start_t, np.mean(np.true_divide(iou_intersects[idx], 
+                    iou_unions[idx] + 1e-20))))
 
         set_ious = np.true_divide(np.sum(iou_intersects, axis=0), 
                 np.sum(iou_unions, axis=0) + 1e-20)
