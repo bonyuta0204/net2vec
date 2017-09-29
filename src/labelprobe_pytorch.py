@@ -91,7 +91,8 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
         loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories, 
                 indexes=label_idx, once=False, batch_size=batch_size, 
                 ahead=ahead, thread=True)
-        N = len(loader.indexes)
+        loader_idx = loader.indexes
+        N = len(loader_idx)
         iou_intersects = np.zeros((N, unit_size))
         iou_unions = np.zeros((N, unit_size)) 
 
@@ -115,7 +116,7 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
             else:
                 idx = range(i*batch_size, N)
             i += 1
-            input = torch.Tensor((blobdata[idx] > thresh).astype(float))
+            input = torch.Tensor((blobdata[loader_idx[idx]] > thresh).astype(float))
             input_var = upsample(Variable(input.cuda()) if cuda else
                     Variable(input))
             target = torch.Tensor([np.max((rec[rec_labcat[j]] 
