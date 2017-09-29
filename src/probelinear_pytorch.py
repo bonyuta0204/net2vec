@@ -59,10 +59,10 @@ def probe_linear(directory, blob, batch_size=16, ahead=4, quantile=0.005, cuda=F
                     dtype='float32', shape=(L,K))
             weights = all_weights[label_i]
             if not np.any(weights):
-                print('Label %d does not have associated weights to it, so skipping.') 
+                print('Label %d does not have associated weights to it, so skipping.' % label_i) 
                 continue 
         else:
-            print('Label %d does not have associated weights to it, so skipping.')
+            print('Label %d does not have associated weights to it, so skipping.' % label_i)
             continue 
 
         label_categories = ds.label[label_i]['category'].keys()
