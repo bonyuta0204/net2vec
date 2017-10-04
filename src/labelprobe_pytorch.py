@@ -144,7 +144,7 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
         ind_ious = np.true_divide(iou_intersects, iou_unions + 1e-20)
 
         set_ious_mmap[label_i] = set_ious
-        ind_ious_mmap[label_i, label_idx] = ind_ious
+        ind_ious_mmap[label_i, loader_idx] = ind_ious
 
         #set_ious_mmap.flush()
         #ind_ious_mmap.flush()
@@ -171,8 +171,8 @@ if __name__ == '__main__':
                 help='the batch size to use')
         parser.add_argument('--gpu', type=int, default=None,
                 help='use GPU for training')
-        parser.add_argument('--start', type=int, default=None)
-        parser.add_argument('--end', type=int, default=None)
+        parser.add_argument('--start', type=int, default=1)
+        parser.add_argument('--end', type=int, default=1198)
 
         args = parser.parse_args()
         

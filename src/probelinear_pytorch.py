@@ -16,11 +16,12 @@ import os
 import time
 
 
-def probe_linear(directory, blob, batch_size=16, ahead=4, quantile=0.005, cuda=False):
+def probe_linear(directory, blob, suffix='', batch_size=16, ahead=4, 
+        quantile=0.005, cuda=False):
     qcode = ('%f' % quantile).replace('0.','.').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
-    if (ed.has_mmap(blob=blob, part='linear_ind_ious') and 
-            ed.has_mmap(blob=blob, part='linear_set_ious')):
+    if (ed.has_mmap(blob=blob, part='linear_ind_ious%s' % suffix) and 
+            ed.has_mmap(blob=blob, part='linear_set_ious%s' % suffix)):
         print('Linear weights have already been probed.')
         return
     info = ed.load_info()
@@ -40,23 +41,23 @@ def probe_linear(directory, blob, batch_size=16, ahead=4, quantile=0.005, cuda=F
     blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
     image_to_label = load_image_to_label(directory)
 
-    ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious', mode='w+',
+    ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='w+',
             dtype='float32', shape=(L,N))
-    set_ious = ed.open_mmap(blob=blob, part='linear_set_ious', mode='w+',
+    set_ious = ed.open_mmap(blob=blob, part='linear_set_ious%s' % suffix, mode='w+',
             dtype='float32', shape=(L,))
 
     for label_i in range(1, L):
-        if ed.has_mmap(blob=blob, part='label_i_%d_weights' % label_i):
+        if ed.has_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix)):
             try:
-                weights = ed.open_mmap(blob=blob, part='label_i_%d_weights' % label_i,
-                        mode='r', dtype='float32', shape=(K,))
+                weights = ed.open_mmap(blob=blob, part='label_i_%d_weights%s' 
+                        % (label_i, suffix),mode='r', dtype='float32', shape=(K,))
             except ValueError:
                 # SUPPORTING LEGACY CODE (TODO: Remove)
-                weights = ed.open_mmap(blob=blob, part='label_i_%d_weights' % label_i,
-                        mode='r', dtype=float, shape=(K,))
-        elif ed.has_mmap(blob=blob, part='linear_weights'):
-            all_weights = ed.open_mmap(blob=blob, part='linear_weights', mode='r',
-                    dtype='float32', shape=(L,K))
+                weights = ed.open_mmap(blob=blob, part='label_i_%d_weights%s' 
+                        % (label_i, suffix), mode='r', dtype=float, shape=(K,))
+        elif ed.has_mmap(blob=blob, part='linear_weights%s' % suffix):
+            all_weights = ed.open_mmap(blob=blob, part='linear_weights%s' % suffix, 
+                    mode='r', dtype='float32', shape=(L,K))
             weights = all_weights[label_i]
             if not np.any(weights):
                 print('Label %d does not have associated weights to it, so skipping.' % label_i) 
@@ -151,6 +152,7 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser()
         parser.add_argument('--directory', default='.')
         parser.add_argument('--blobs', nargs='*')
+        parser.add_argument('--suffix', type=str, default='')
         parser.add_argument('--batch_size', type=int, default=16)
         parser.add_argument('--ahead', type=int, default=4)
         parser.add_argument('--quantile', type=float, default=0.005)
@@ -169,7 +171,7 @@ if __name__ == '__main__':
         print(torch.cuda.device_count(), use_mult_gpu, cuda)
 
         for blob in args.blobs:
-            probe_linear(args.directory, blob,
+            probe_linear(args.directory, blob, suffix=args.suffix,
                     batch_size=args.batch_size, ahead=args.ahead,
                     quantile=args.quantile, cuda=cuda)
     except:

@@ -39,11 +39,15 @@ class AverageMeter(object):
 
 class CustomLayer(nn.Module):
     def __init__(self, num_features, upsample=True, up_size=(224,224), 
-            act=True, positive=False):
+            act=True, positive=False, bias=False):
         super(CustomLayer, self).__init__()
         self.num_features = num_features
         self.positive = positive
         self.weight = Parameter(torch.Tensor(self.num_features))
+        if bias:
+            self.bias = Parameter(torch.Tensor(1))
+        else:
+            self.bias = 0
         self.up = upsample
         if self.up:
             self.upsample = nn.Upsample(size=up_size, mode='bilinear')
@@ -62,16 +66,17 @@ class CustomLayer(nn.Module):
 
     def forward(self, x):
         y = x * self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
+        #print(y.size(), y.sum(1).size(), self.bias.size(), (y.sum(1) + self.bias).size())
         if self.act:
             if self.up:
-                return self.activation(self.upsample(y.sum(1).unsqueeze(1)).squeeze())
+                return self.activation(self.upsample((y.sum(1) + self.bias).unsqueeze(1)).squeeze())
             else:
-                return self.activation(y.sum(1).squeeze())
+                return self.activation((y.sum(1) + self.bias).squeeze())
         else:
             if self.up:
-                return self.upsample(y.sum(1).unsqueeze(1)).squeeze()
+                return self.upsample((y.sum(1) + self.bias).unsqueeze(1)).squeeze()
             else:
-                return y.sum(1).squeeze()
+                return (y.sum(1) + self.bias).squeeze()
 
 
 def BCELoss2d(input, target, alpha=None):
@@ -146,18 +151,18 @@ def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw,
 
         iou = np.true_divide(iou_intersects.sum, iou_unions.sum)[0]
 
-        if train:
-            print('Epoch {0}[{1}/{2}]\t'
-                  'Avg Loss {losses.avg:.4f}\t'
-                  'Overall IOU {3}\t'
-                  'Time {4}\t'.format(epoch, i, int(round(N/batch_size)), 
-                      iou, time.time()-start, losses=losses))
-        else:
-            print('Test [{0}/{1}]\t'
-                  'Avg Loss {losses.avg:.4f}\t'
-                  'Overall IOU {2}\t'
-                  'Time {3}\t'.format(i, int(round(N/batch_size)), 
-                      iou, time.time()-start, losses=losses))
+        #if train:
+        #    print('Epoch {0}[{1}/{2}]\t'
+        #          'Avg Loss {losses.avg:.4f}\t'
+        #          'Overall IOU {3}\t'
+        #          'Time {4}\t'.format(epoch, i, int(round(N/batch_size)), 
+        #              iou, time.time()-start, losses=losses))
+        #else:
+        #    print('Test [{0}/{1}]\t'
+        #          'Avg Loss {losses.avg:.4f}\t'
+        #          'Overall IOU {2}\t'
+        #          'Time {3}\t'.format(i, int(round(N/batch_size)), 
+        #              iou, time.time()-start, losses=losses))
 
     if train:
         print('Epoch {0}\t'
@@ -173,16 +178,17 @@ def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw,
     return (losses.avg, iou)
 
 
-def linear_probe(directory, blob, label_i, batch_size=16, ahead=4, 
-        quantile=0.005, num_epochs=30, lr=1e-4, momentum=0.9, l1_weight_decay=0, 
-        l2_weight_decay=0, nesterov=False, lower_bound=None, cuda=False):
+def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4, 
+        quantile=0.005, bias=False, positive=False, num_epochs=30, lr=1e-4, momentum=0.9, 
+        l1_weight_decay=0, l2_weight_decay=0, nesterov=False, lower_bound=None, 
+        cuda=False):
     # Make sure we have a directory to work in
-    qcode = ('%f' % quantile).replace('0.','').rstrip('0')
+    #qcode = ('%f' % quantile).replace('0.','').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
     # Check if linear weights have already been learned 
-    if ed.has_mmap(blob=blob, part='label_i_%d_weights' % label_i):
+    if ed.has_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix)):
         print('%s already has %s, so skipping.' % (directory,
-            ed.mmap_filename(blob=blob, part='label_i_%d_weights' % label_i)))
+            ed.mmap_filename(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix))))
         return
     # Load probe metadata
     info = ed.load_info()
@@ -193,9 +199,13 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
     unit_size = shape[1]
     fieldmap = blob_info.fieldmap
     # Load the blob quantile data and grab thresholds
-    quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(unit_size, -1))
-    threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
-    thresh = threshold[:, np.newaxis, np.newaxis]
+    if quantile == 1:
+        thresh = np.zeros((unit_size,1,1))
+    else:
+        quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(unit_size, -1))
+        threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
+        thresh = threshold[:, np.newaxis, np.newaxis]
+    #print np.max(thresh), thresh.shape, type(thresh)
     # Map the blob activation data for reading
     fn_read = ed.mmap_filename(blob=blob)
     # Load the dataset
@@ -267,7 +277,7 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
     # the linear layer
     #layer = CustomLayer(unit_size, upsample=False, act=True, positive=False)
     layer = CustomLayer(unit_size, upsample=True, up_size=(sh,sw), act=True, 
-            positive=False)
+            bias=bias, positive=positive)
     if cuda:
         layer.cuda()
 
@@ -309,10 +319,16 @@ def linear_probe(directory, blob, label_i, batch_size=16, ahead=4,
 
     # Save weights
     weights = layer.weight.data.cpu().numpy()
-    weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights' % label_i,
+    weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix),
             mode='w+', dtype='float32', shape=weights.shape)
     weights_mmap[:] = weights[:]
     ed.finish_mmap(weights_mmap)
+    if bias:
+        bias_v = layer.bias.data.cpu().numpy()
+        bias_mmap = ed.open_mmap(blob=blob, part='label_i_%d_bias%s' % (label_i, suffix),
+                mode='w+', dtype='float32', shape=(1,))
+        bias_mmap[:] = bias_v[:]
+        ed.finish_mmap(bias_mmap)
 
 
 if __name__ == '__main__':
@@ -339,13 +355,18 @@ if __name__ == '__main__':
         parser.add_argument(
                 '--start',
                 type=int,
-                default=None,
+                default=1,
                 help='start index for class label (inclusive)')
         parser.add_argument(
                 '--end',
                 type=int,
-                default=None,
+                default=1198,
                 help='end index for class label (exclusive)')
+        parser.add_argument(
+                '--suffix',
+                type=str,
+                default='',
+                help='TODO')
         parser.add_argument(
                 '--batch_size',
                 type=int, 
@@ -372,16 +393,31 @@ if __name__ == '__main__':
                 default=30,
                 help='the number of epochs to train for')
         parser.add_argument(
+                '--lower_bound',
+                type=int,
+                default=None,
+                help='TODO')
+        parser.add_argument(
+                '--bias', 
+                action='store_true',
+                default=False,
+                help='TODO')
+        parser.add_argument(
+                '--positive',
+                action='store_true',
+                default=False,
+                help='TODO')
+        parser.add_argument(
                  '--gpu',
                 type=int,
                 default=None,
                 help='use GPU for training')
 
         args = parser.parse_args()
-        if args.start is not None and args.end is not None:
-            labels = range(args.start, args.end)
-        else:
+        if args.labels is not None:
             labels = args.labels
+        else:
+            labels = range(args.start, args.end)
 
         gpu = args.gpu
         cuda = True if gpu is not None else False
@@ -394,10 +430,13 @@ if __name__ == '__main__':
         print torch.cuda.device_count(), use_mult_gpu, cuda
         for blob in args.blobs:
             for label_i in labels:
-                linear_probe(args.directory, blob, int(label_i), 
+                linear_probe(args.directory, blob, int(label_i),
+                        suffix=args.suffix,
                         batch_size=args.batch_size,
                         ahead=args.ahead, quantile=args.quantile,
-                        num_epochs=args.num_epochs, lr=args.learning_rate, 
+                        bias=args.bias, positive=args.positive, 
+                        lower_bound=args.lower_bound, num_epochs=args.num_epochs, 
+                        lr=args.learning_rate, 
                         cuda=cuda)
 
     except:
