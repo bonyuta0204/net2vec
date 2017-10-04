@@ -1,7 +1,8 @@
 # pre-defined setting
 
 WORKDIR=probes
-DIR=pytorch_alexnet_imagenet
+#DIR=pytorch_alexnet_imagenet
+DIR=pytorch_vgg19_imagenet
 #ARCH='alexnet' # [alexnet,squeezenet1_1,resnet18,...]. It should work for all the models in https://github.com/pytorch/vision/tree/master/torchvision/models
 #LAYERS="features"
 #LAYERS="features.1 features.4 features.7 features.9 features.11"
