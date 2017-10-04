@@ -103,7 +103,7 @@ class SegmentationData(AbstractSegmentation):
         '''All English synonyms for the given label'''
         if category is not None:
             j = self.category_unmap[category][j]
-        return [self.label[j]['name']] + self.label[i]['syns']
+        return [self.label[j]['name']] + self.label[j]['syns']
 
     def size(self, split=None):
         '''The number of images in this data set.'''

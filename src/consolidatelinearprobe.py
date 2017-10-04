@@ -49,7 +49,7 @@ def consolidate_probe(directory, blob, delete=False):
             if ed.has_mmap(blob=blob, part='label_i_%d_weights' % l):
                 fn = ed.mmap_filename(blob=blob, part='label_i_%d_weights' % l)
                 os.remove(fn)
-                c_w += 1
+                c += 1
         print('Removed %d weights and files.' % c)
 
 
