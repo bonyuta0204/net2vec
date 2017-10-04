@@ -2,12 +2,17 @@
 
 WORKDIR=probes
 DIR=pytorch_alexnet_imagenet
-ARCH='alexnet' # [alexnet,squeezenet1_1,resnet18,...]. It should work for all the models in https://github.com/pytorch/vision/tree/master/torchvision/models
+#ARCH='alexnet' # [alexnet,squeezenet1_1,resnet18,...]. It should work for all the models in https://github.com/pytorch/vision/tree/master/torchvision/models
 #LAYERS="features"
-LAYERS="features.1 features.4 features.7 features.9 features.11"
+#LAYERS="features.1 features.4 features.7 features.9 features.11"
+ARCH="vgg19"
+LAYERS="features.3 features.8 features.17 features.26 features.35"
 NUMCLASSES=1000
-DATASET=dataset/broden1_227
-INPUTSIZE=227
+#DATASET=dataset/broden1_227
+DATASET=dataset/broden1_224
+#INPUTSIZE=227
+INPUTSIZE=224
+GPU="0"
 WEIGHTS="None"
 
 # default setting
@@ -68,7 +73,8 @@ python src/netprobe_pytorch.py \
     --definition $ARCH \
     --num_classes $NUMCLASSES \
     --dataset $DATASET \
-    --input_size $INPUTSIZE
+    --input_size $INPUTSIZE \
+    --gpu $GPU
 # --weights $WEIGHTS
 
 [[ $? -ne 0 ]] && exit $?

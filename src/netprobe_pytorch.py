@@ -38,7 +38,7 @@ def create_probe(
         rotation_seed=None, rotation_power=1,
         limit=None, split=None,
         batch_size=16, ahead=4,
-        cl_args=None, verbose=True):
+        cl_args=None, verbose=True, cuda=False):
     # If we're already done, skip it!
     ed = expdir.ExperimentDirectory(directory)
     if all(ed.has_mmap(blob=b) for b in blobs):
@@ -139,7 +139,8 @@ def create_probe(
     start_time = time.time()
     last_batch_time = start_time
     batch_size = 0
-    net.cuda()
+    if cuda:
+        net.cuda()
 
     # hook the feature extractor
     features_blobs = []
@@ -170,7 +171,8 @@ def create_probe(
         inp = inp[:,::-1,:,:]
         inp_tensor = V(torch.from_numpy(inp.copy()))
         inp_tensor.div_(255.0*0.224) # approximately normalize the input to make the images scaled at around 1.
-        inp_tensor = inp_tensor.cuda()
+        if cuda:
+            inp_tensor = inp_tensor.cuda()
         result = net.forward(inp_tensor)
         # output the hooked feature
         for i, key in enumerate(blobs):
@@ -293,18 +295,31 @@ if __name__ == '__main__':
                 type=int, default=3,
                 help='set to 1 for grayscale')
         parser.add_argument(
+                '--gpu',
+                type=int, default=None, nargs='*',
+                help='gpu to use (zero-index)')
+        parser.add_argument(
                 '--num_classes',
                 type=int, default=365,
                 help='the number of classes for the network output(default is 365)')
 
         args = parser.parse_args()
+        gpu = args.gpu
+        cuda = True if gpu is not None else False
+        use_mult_gpu = isinstance(gpu, list)
+        if cuda:
+            if use_mult_gpu:
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu).strip('[').strip(']')
+            else:
+                os.environ['CUDA_VISIBLE_DEVICES'] = '%d' % gpu
+        print torch.cuda.device_count(), use_mult_gpu, cuda
         create_probe(
             args.directory, args.dataset, args.definition, args.weights,
             numpy.array(args.mean, dtype=numpy.float32), args.blobs,
             batch_size=args.batch_size, ahead=args.ahead, limit=args.limit,
             colordepth=args.colordepth,
             rotation_seed=args.rotation_seed, rotation_power=args.rotation_power,
-            split=args.split, cl_args=args, verbose=True)
+            split=args.split, cl_args=args, verbose=True,cuda=cuda)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
