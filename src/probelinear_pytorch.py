@@ -16,8 +16,8 @@ import os
 import time
 
 
-def probe_linear(directory, blob, suffix='', batch_size=16, ahead=4, 
-        quantile=0.005, cuda=False):
+def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16, 
+        ahead=4,  quantile=0.005, bias=False, positive=False, cuda=False):
     qcode = ('%f' % quantile).replace('0.','.').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
     if (ed.has_mmap(blob=blob, part='linear_ind_ious%s' % suffix) and 
@@ -33,20 +33,34 @@ def probe_linear(directory, blob, suffix='', batch_size=16, ahead=4,
     K = shape[1] # number of units in given blob 
     L = ds.label_size() # number of labels
 
-    quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(K, -1))
-    threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
-    thresh = threshold[:, np.newaxis, np.newaxis]
+    if quantile == 1:
+        thresh = np.zeros((K,1,1))
+    else:
+        quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(K, -1))
+        threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
+        thresh = threshold[:, np.newaxis, np.newaxis]
 
     fn_read = ed.mmap_filename(blob=blob)
     blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
     image_to_label = load_image_to_label(directory)
 
-    ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='w+',
-            dtype='float32', shape=(L,N))
-    set_ious = ed.open_mmap(blob=blob, part='linear_set_ious%s' % suffix, mode='w+',
-            dtype='float32', shape=(L,))
+    if ed.has_mmap(blob=blob, part='linear_ind_ious%s' % suffix, inc=True):
+        assert(ed.has_mmap(blob=blob, part='linear_set_ious%s' % suffix, inc=True))
+        ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='r+',
+                inc=True, dtype='float32', shape=(L,N))
+        set_ious = ed.open_mmap(blob=blob, part='linear_set_ious%s' % suffix, mode='r+',
+                inc=True, dtype='float32', shape=(L,))
+    else:
+        ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='w+',
+                dtype='float32', shape=(L,N))
+        set_ious = ed.open_mmap(blob=blob, part='linear_set_ious%s' % suffix, mode='w+',
+                dtype='float32', shape=(L,))
 
-    for label_i in range(1, L):
+    if start is None:
+        start = 1
+    if end is None:
+        end = L
+    for label_i in range(start, end):
         if ed.has_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix)):
             try:
                 weights = ed.open_mmap(blob=blob, part='label_i_%d_weights%s' 
@@ -66,6 +80,11 @@ def probe_linear(directory, blob, suffix='', batch_size=16, ahead=4,
             print('Label %d does not have associated weights to it, so skipping.' % label_i)
             continue 
 
+        if bias:
+            assert(ed.has_mmap(blob=blob, part='label_i_%d_bias%s' % (label_i, suffix)))
+            bias_v = ed.open_mmap(blob=blob, part='label_i_%d_bias%s' % 
+                    (label_i, suffix), mode='r', dtype='float32', shape=(1,))
+
         label_categories = ds.label[label_i]['category'].keys()
         label_name = ds.name(category=None, j=label_i)
         label_idx = np.where(image_to_label[:, label_i])[0]
@@ -80,8 +99,11 @@ def probe_linear(directory, blob, suffix='', batch_size=16, ahead=4,
             label_i, label_name, num_imgs))
 
         model = CustomLayer(K, upsample=True, up_size=seg_size, act=True, 
-                positive=False)
+                bias=bias, positive=positive)
         model.weight.data[...] = torch.Tensor(weights)
+        if bias:
+            model.bias.data[...] = torch.Tensor(bias_v)
+
         if cuda:
             model.cuda()
         model.eval()
@@ -153,9 +175,13 @@ if __name__ == '__main__':
         parser.add_argument('--directory', default='.')
         parser.add_argument('--blobs', nargs='*')
         parser.add_argument('--suffix', type=str, default='')
+        parser.add_argument('--start', type=int, default=1)
+        parser.add_argument('--end', type=int, default=1198)
         parser.add_argument('--batch_size', type=int, default=16)
         parser.add_argument('--ahead', type=int, default=4)
         parser.add_argument('--quantile', type=float, default=0.005)
+        parser.add_argument('--bias', action='store_true', default=False)
+        parser.add_argument('--positive', action='store_true', default=False)
         parser.add_argument('--gpu', type=int, default=None)
 
         args = parser.parse_args()
@@ -172,8 +198,10 @@ if __name__ == '__main__':
 
         for blob in args.blobs:
             probe_linear(args.directory, blob, suffix=args.suffix,
+                    start=args.start, end=args.end, 
                     batch_size=args.batch_size, ahead=args.ahead,
-                    quantile=args.quantile, cuda=cuda)
+                    quantile=args.quantile, bias=args.bias, 
+                    positive=args.positive, cuda=cuda)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
