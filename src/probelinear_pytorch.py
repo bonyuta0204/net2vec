@@ -50,11 +50,19 @@ def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16,
                 inc=True, dtype='float32', shape=(L,N))
         set_ious = ed.open_mmap(blob=blob, part='linear_set_ious%s' % suffix, mode='r+',
                 inc=True, dtype='float32', shape=(L,))
+        set_ious_train = ed.open_mmap(blob=blob, part='linear_set_train_ious%s' % suffix,
+                mode='r+', inc=True, dtype='float32', shape=(L,))
+        set_ious_val = ed.open_mmap(blob=blob, part='linear_set_val_ious%s' % suffix, 
+                mode='r+', inc=True, dtype='float32', shape=(L,))
     else:
         ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='w+',
                 dtype='float32', shape=(L,N))
         set_ious = ed.open_mmap(blob=blob, part='linear_set_ious%s' % suffix, mode='w+',
                 dtype='float32', shape=(L,))
+        set_ious_train = ed.open_mmap(blob=blob, part='linear_set_train_ious%s' % suffix,
+                mode='w+', dtype='float32', shape=(L,))
+        set_ious_val = ed.open_mmap(blob=blob, part='linear_set_val_ious%s' % suffix, 
+                mode='w+', dtype='float32', shape=(L,))
 
     if start is None:
         start = 1
@@ -81,9 +89,14 @@ def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16,
             continue 
 
         if bias:
-            assert(ed.has_mmap(blob=blob, part='label_i_%d_bias%s' % (label_i, suffix)))
-            bias_v = ed.open_mmap(blob=blob, part='label_i_%d_bias%s' % 
-                    (label_i, suffix), mode='r', dtype='float32', shape=(1,))
+            if ed.has_mmap(blob=blob, part='label_i_%d_bias%s' % (label_i, suffix)):
+                bias_v = ed.open_mmap(blob=blob, part='label_i_%d_bias%s' % 
+                        (label_i, suffix), mode='r', dtype='float32', shape=(1,))
+            else:
+                assert(ed.has_mmap(blob=blob, part='linear_bias%s' % suffix))
+                all_bias_v = ed.open_mmap(blob=blob, part='linear_bias%s' % suffix,
+                        mode='r', dtype='float32', shape=(L,))
+                bias_v = np.array([all_bias_v[label_i]])
 
         label_categories = ds.label[label_i]['category'].keys()
         label_name = ds.name(category=None, j=label_i)
@@ -155,14 +168,23 @@ def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16,
         label_set_iou = np.true_divide(np.sum(iou_intersects), 
                 np.sum(iou_unions) + 1e-20)
 
-        ind_ious[label_i, label_idx] = label_ind_ious
+        ind_ious[label_i, loader_idx] = label_ind_ious
         set_ious[label_i] = label_set_iou
+        train_idx = [i for i in range(len(loader_idx)) if ds.split(loader_idx[i]) == 'train']
+        val_idx = [i for i in range(len(loader_idx)) if ds.split(loader_idx[i]) == 'val']
+        set_ious_train[label_i] = np.true_divide(np.sum(iou_intersects[train_idx]),
+                np.sum(iou_unions[train_idx]) + 1e-20)
+        set_ious_val[label_i] = np.true_divide(np.sum(iou_intersects[val_idx]),
+                np.sum(iou_unions[val_idx]) + 1e-20)
 
-        print('Label %d (%s) Set IOU: %f, Max Ind IOU: %f' % (label_i, 
-            label_name, label_set_iou, np.max(label_ind_ious)))
+        print('Label %d (%s) Set IOU: %f, Train Set IOU: %f, Val Set IOU: %f, Max Ind IOU: %f' 
+                % (label_i, label_name, label_set_iou, set_ious_train[label_i],
+                    set_ious_val[label_i], np.max(label_ind_ious)))
 
     ed.finish_mmap(ind_ious)
     ed.finish_mmap(set_ious)
+    ed.finish_mmap(set_ious_train)
+    ed.finish_mmap(set_ious_val)
 
 
 if __name__ == '__main__':
