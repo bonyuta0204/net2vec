@@ -97,7 +97,7 @@ def iou_union(input, target, threshold = 0.5):
     return torch.sum(torch.clamp(torch.add(target, (input > threshold).float()), max=1.))
 
 
-def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw, 
+def run_epoch(activations, act_idx, label_categories, label_i, fieldmap, thresh, sh, sw, 
         reduction, loader, model, criterion, optimizer, epoch, train=True, 
         cuda=False, iou_threshold=0.5):
     if train:
@@ -108,7 +108,7 @@ def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw,
         volatile=True
 
     batch_size = loader.batch_size
-    N = activations.shape[0]
+    N = len(act_idx)
 
     losses = AverageMeter()
     iou_intersects = AverageMeter()
@@ -126,7 +126,7 @@ def run_epoch(activations, label_categories, label_i, fieldmap, thresh, sh, sw,
         #up = [upsample.upsampleL(fieldmap, act, shape=(sh,sw), reduction=reduction)
         #        for act in activations[idx]]
         #input = torch.Tensor((up > thresh).astype(float))
-        input = torch.Tensor((activations[idx] > thresh).astype(float))
+        input = torch.Tensor((activations[act_idx[idx]] > thresh).astype(float))
         input_var = (Variable(input.cuda(), volatile=volatile) if cuda
                 else Variable(input, volatile=volatile))
         target = torch.Tensor([np.max((rec[label_categories[idx[j]]] 
@@ -234,7 +234,7 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
         print(err.args)
         return
     
-    train_idx = train_loader.indexes
+    train_idx = np.array(train_loader.indexes)
 
     sw = 0
     sh = 0
@@ -294,7 +294,7 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
         train_loader.close()
         return
 
-    val_idx = val_loader.indexes
+    val_idx = np.array(val_loader.indexes)
 
     val_label_categories = []
     for batch in val_loader.batches():
@@ -306,10 +306,10 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
     assert(len(val_label_categories) == len(val_idx))
 
     for t in range(num_epochs):
-        (_, iou) = run_epoch(blobdata[train_idx], train_label_categories, label_i,
+        (_, iou) = run_epoch(blobdata, train_idx, train_label_categories, label_i,
                 fieldmap, thresh, sh, sw, reduction, train_loader, layer, criterion, 
                 optimizer, t+1, train=True, cuda=cuda, iou_threshold=0.5)
-        (_, iou) = run_epoch(blobdata[val_idx], val_label_categories, label_i,
+        (_, iou) = run_epoch(blobdata, val_idx, val_label_categories, label_i,
                 fieldmap, thresh, sh, sw, reduction, val_loader, layer, criterion,
                 optimizer, t+1, train=False, cuda=cuda, iou_threshold=0.5)
 
