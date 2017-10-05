@@ -28,6 +28,7 @@ from collections import namedtuple
 import upsample
 import rotate
 import expdir
+from urllib2 import URLError
 
 #caffe.set_mode_gpu()
 #caffe.set_device(0)
@@ -59,7 +60,16 @@ def create_probe(
     # the network to dissect
     if args.weights == None:
         # load the imagenet pretrained model
-        net = torchvision.models.__dict__[args.definition](pretrained=True)
+        try:
+            net = torchvision.models.__dict__[args.definition](pretrained=True)
+        except URLError:
+            print('Manually loading pretrained weights...')
+            import torch.utils.model_zoo as model_zoo
+            model_urls = {
+                    'vgg19': 'http://download.pytorch.org/models/vgg19-dcbb9e9d.pth'
+            }
+            net = torchvision.models.__dict__[args.definition]()
+            net.load_state_dict(model_zoo.load_url(model_urls[args.definition]))
     else:
         # load your own model
         net = torchvision.models.__dict__[args.definition](num_classes=args.num_classes)
