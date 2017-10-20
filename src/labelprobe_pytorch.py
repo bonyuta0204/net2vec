@@ -73,6 +73,10 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
     num_labels = ds.label_size()
     upsample = nn.Upsample(size=seg_size, mode='bilinear')
 
+    set_ious_train_mmap = ed.open_mmap(blob=blob, part='single_set_train_ious', 
+            mode='w+', dtype='float32', shape=(num_labels, unit_size))
+    set_ious_val_mmap = ed.open_mmap(blob=blob, part='single_set_val_ious',
+            mode='w+', dtype='float32', shape=(num_labels, unit_size))
     set_ious_mmap = ed.open_mmap(blob=blob, part='single_set_ious', mode='w+',
         dtype='float32', shape=(num_labels, unit_size))
     ind_ious_mmap = ed.open_mmap(blob=blob, part='single_ind_ious', mode='w+',
@@ -145,10 +149,18 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
 
         set_ious_mmap[label_i] = set_ious
         ind_ious_mmap[label_i, loader_idx] = ind_ious
+        train_idx = [i for i in range(len(loader_idx)) if ds.split(loader_idx[i]) == 'train']
+        val_idx = [i for i in range(len(loader_idx)) if ds.split(loader_idx[i]) == 'val']
+        set_ious_train_mmap[label_i] = np.true_divide(np.sum(iou_intersects[train_idx], axis=0),
+                np.sum(iou_unions[train_idx], axis=0) + 1e-20)
+        set_ious_val_mmap[label_i] = np.true_divide(np.sum(iou_intersects[val_idx], axis=0),
+                np.sum(iou_unions[val_idx], axis=0) + 1e-20)
 
         #set_ious_mmap.flush()
         #ind_ious_mmap.flush()
     
+    ed.finish_mmap(set_ious_train_mmap)
+    ed.finish_mmap(set_ious_val_mmap)
     ed.finish_mmap(set_ious_mmap)
     ed.finish_mmap(ind_ious_mmap)
 
