@@ -458,14 +458,6 @@ if __name__ == '__main__':
         print torch.cuda.device_count(), use_mult_gpu, cuda
         for blob in args.blobs:
             for label_i in labels:
-                if args.figure_dir is not None:
-                    fig_path = os.path.join(args.figure_dir, blob, '%s%s.png' % (label_i, args.suffix))
-                    directory = os.path.dirname(fig_path)
-                    if not os.path.exists(directory):
-                        print 'Creating %s ...' % directory
-                        os.makedirs(directory)
-                else:
-                    fig_path = None
 
                 if args.num_filters is not None:
                     if len(args.num_filters) > 1:
@@ -480,6 +472,15 @@ if __name__ == '__main__':
                     suffix = [args.suffix]
 
                 for i in range(len(num_filters)):
+                    if args.figure_dir is not None:
+                        fig_path = os.path.join(args.figure_dir, blob, '%s%s.png' % (label_i,
+                                                                                     suffix[i]))
+                        directory = os.path.dirname(fig_path)
+                        if not os.path.exists(directory):
+                            print 'Creating %s ...' % directory
+                            os.makedirs(directory)
+                    else:
+                        fig_path = None
                     linear_probe_discriminative(args.directory, blob, int(label_i),
                                                 suffix=suffix[i],
                                                 batch_size=args.batch_size,
