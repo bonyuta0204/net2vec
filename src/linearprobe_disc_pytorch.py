@@ -27,11 +27,17 @@ import numpy as np
 
 
 class CustomDiscLayer(nn.Module):
-    def __init__(self, num_features, act=True, pool=None, positive=False, bias=False):
+    def __init__(self, num_features, act=True, pool=None, positive=False, bias=False,
+                 mask_idx=None, cuda=False):
         super(CustomDiscLayer, self).__init__()
         self.num_features = num_features
         self.positive = positive
         self.weight = Parameter(torch.Tensor(self.num_features))
+        mask_ = torch.ones(self.num_features)
+        if mask_idx is not None:
+            mask_[:] = 0
+            mask_[mask_idx] = 1
+        self.mask = Variable(mask_.cuda() if cuda else mask_)
         if bias:
             self.bias = Parameter(torch.Tensor(1))
         else:
@@ -54,7 +60,7 @@ class CustomDiscLayer(nn.Module):
             self.bias.data.uniform_(0,1)
 
     def forward(self, x):
-        y = x * self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
+        y = x * (self.mask * self.weight).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
         if self.pool is 'max_pool':
             y = torch.max(torch.max(y, dim=3)[0], dim=2)[0]
         elif self.pool is 'avg_pool':
@@ -62,37 +68,6 @@ class CustomDiscLayer(nn.Module):
         if self.act:
             return self.activation((y.sum(1) + self.bias).squeeze())
         return (y.sum(1) + self.bias).squeeze()
-
-
-class DiscriminativeData(data.Dataset):
-    def __init__(self, segmentation, indexes, targets, split=None, transform=None,
-                 target_transform=None, loader=default_loader):
-        self.segmentation = segmentation
-        self.split = split
-        self.indexes = indexes
-        self.imgs = []
-        for i in range(len(self.indexes)):
-            ind = self.indexes[i]
-            if (split and segmentation.split(ind) == split) or not split:
-                self.imgs.append((segmentation.filename(ind), targets[i]))
-        if split:
-            self.indexes = [i for i in self.indexes if segmentation.split(i) == split]
-        self.transform = transform
-        self.target_transform = target_transform
-        self.loader = loader
-
-    def __getitem__(self, index):
-        path, target = self.imgs[index]
-        img = self.loader(path)
-        if self.transform is not None:
-            img = self.transform(img)
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target
-
-    def __len__(self):
-        return len(self.imgs)
 
 
 def accuracy(output, target):
@@ -175,6 +150,7 @@ def adjust_learning_rate(starting_lr, optimizer, epoch, epoch_iter):
 
 def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=16,
                                 quantile=0.005, bias=False, pool='avg_pool', positive=False,
+                                num_filters=None, init_suffix='',
                                 num_epochs=30, epoch_iter=10, lr=1e-4, momentum=0.9,
                                 l1_weight_decay=0, l2_weight_decay=0, nesterov=False,
                                 lower_bound=None, optimizer_type='sgd', cuda=False,
@@ -227,7 +203,16 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         label_i, label_name, len(label_idx), len(non_label_idx)))
 
     criterion = torch.nn.BCEWithLogitsLoss()
-    layer = CustomDiscLayer(unit_size, act=False, pool=pool, bias=bias, positive=positive)
+    if num_filters is not None:
+        init_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights_disc%s' % (label_i, init_suffix),
+                                mode='r', dtype='float32', shape=unit_size)
+        sorted_idx = np.argsort(np.abs(init_weights_mmap))[::-1]
+        mask_idx = np.zeros(unit_size, dtype=int)
+        mask_idx[sorted_idx[:num_filters]] = 1
+        layer = CustomDiscLayer(unit_size, act=False, pool=pool, bias=bias, positive=positive,
+                                mask_idx=torch.ByteTensor(mask_idx), cuda=cuda)
+    else:
+        layer = CustomDiscLayer(unit_size, act=False, pool=pool, bias=bias, positive=positive, cuda=cuda)
     if cuda:
         criterion.cuda()
         layer.cuda()
@@ -320,7 +305,8 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
     plt.close()
 
     # Save weights
-    weights = layer.weight.data.cpu().numpy()
+    weights = (layer.mask * layer.weight).data.cpu().numpy()
+    print np.sum(weights != 0)
     weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights_disc%s' % (label_i, suffix),
                                 mode='w+', dtype='float32', shape=weights.shape)
     weights_mmap[:] = weights[:]
@@ -377,6 +363,19 @@ if __name__ == '__main__':
             type=str,
             default='',
             help='TODO')
+        parser.add_argument(
+            '--init_suffix',
+            type=str,
+            default='',
+            help='TODO',
+        )
+        parser.add_argument(
+            '--num_filters',
+            type=int,
+            nargs='*',
+            default=None,
+            help='TODO'
+        )
         parser.add_argument(
             '--batch_size',
             type=int,
@@ -468,20 +467,35 @@ if __name__ == '__main__':
                 else:
                     fig_path = None
 
-                linear_probe_discriminative(args.directory, blob, int(label_i),
-                                            suffix=args.suffix,
-                                            batch_size=args.batch_size,
-                                            quantile=args.quantile,
-                                            bias=args.bias,
-                                            positive=args.positive,
-                                            lower_bound=args.lower_bound,
-                                            num_epochs=args.num_epochs,
-                                            epoch_iter=args.epoch_iter,
-                                            lr=args.learning_rate,
-                                            optimizer_type=args.optimizer,
-                                            cuda=cuda,
-                                            fig_path=fig_path,
-                                            show_fig=args.show_fig)
+                if args.num_filters is not None:
+                    if len(args.num_filters) > 1:
+                        suffix = ['%s_num_filters_%d' % (args.suffix, n) for n in args.num_filters]
+                        num_filters = args.num_filters
+
+                    else:
+                        num_filters = args.num_filters
+                        suffix = [args.suffix]
+                else:
+                    num_filters = [None]
+                    suffix = [args.suffix]
+
+                for i in range(len(num_filters)):
+                    linear_probe_discriminative(args.directory, blob, int(label_i),
+                                                suffix=suffix[i],
+                                                batch_size=args.batch_size,
+                                                quantile=args.quantile,
+                                                bias=args.bias,
+                                                positive=args.positive,
+                                                num_filters=num_filters[i],
+                                                init_suffix=args.init_suffix,
+                                                lower_bound=args.lower_bound,
+                                                num_epochs=args.num_epochs,
+                                                epoch_iter=args.epoch_iter,
+                                                lr=args.learning_rate,
+                                                optimizer_type=args.optimizer,
+                                                cuda=cuda,
+                                                fig_path=fig_path,
+                                                show_fig=args.show_fig)
 
     except:
         traceback.print_exc(file=sys.stdout)
