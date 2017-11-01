@@ -50,6 +50,8 @@ class CustomDiscLayer(nn.Module):
             self.weight.data.uniform_(stdv / 2, stdv / 2)
         else:
             self.weight.data.uniform_(-stdv, stdv)
+        if isinstance(self.bias, Parameter):
+            self.bias.data.uniform_(0,1)
 
     def forward(self, x):
         y = x * self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
