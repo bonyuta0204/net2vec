@@ -317,6 +317,7 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         plt.savefig(fig_path)
     if show_fig:
         plt.show()
+    plt.close()
 
     # Save weights
     weights = layer.weight.data.cpu().numpy()
