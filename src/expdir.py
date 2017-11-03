@@ -158,7 +158,11 @@ class ExperimentDirectory:
         with open(filename, 'r') as f:
             for line in f.readlines():
                 k, v = line.split(':', 1)
-                info[k] = eval(v.strip())
+                try:
+                    info[k] = eval(v.strip())
+                except:
+                    assert(v.strip() == 'nan')
+                    info[k] = None
         # Return as dictionary if requested.
         if asdict:
             return info
@@ -263,10 +267,10 @@ class ExperimentDirectory:
     ###################################################################
 
     def mmap_filename(self, blob=None, part=None,
-            inc=False, **kwargs):
+            inc=False, suffix='', **kwargs):
         result = self.filename('%s.mmap%s' % (
             '-'.join(filter(None, [fn_safe(blob), part])),
-            '-inc' if inc else ''), **kwargs)
+            '-inc%s' % suffix if inc else suffix), **kwargs)
         return result
 
     def has_mmap(self, **kwargs):
