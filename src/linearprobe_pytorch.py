@@ -180,7 +180,7 @@ def run_epoch(activations, act_idx, label_categories, label_i, fieldmap, thresh,
 
 def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4, 
         quantile=0.005, bias=False, positive=False, num_epochs=30, lr=1e-4, momentum=0.9, 
-        l1_weight_decay=0, l2_weight_decay=0, nesterov=False, lower_bound=None, 
+        l1_weight_decay=0, l2_weight_decay=0, validation=False, nesterov=False, lower_bound=None,
         cuda=False):
     # Make sure we have a directory to work in
     #qcode = ('%f' % quantile).replace('0.','').rstrip('0')
@@ -227,9 +227,11 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
         label_i, label_name, len(label_idx)))
     
     try:
-        train_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories, 
-                split='train', indexes=label_idx, once=False, batch_size=batch_size, 
-                ahead=ahead, thread=True)
+        train_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
+                                                      split='val' if validation else 'train',
+                                                      indexes=label_idx, once=False,
+                                                      batch_size=batch_size,
+                                                      ahead=ahead, thread=True)
     except IndexError as err:
         print(err.args)
         return
@@ -285,33 +287,35 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
             l1_weight_decay=l1_weight_decay, l2_weight_decay=l2_weight_decay,
             nesterov=nesterov, lower_bound=lower_bound)
 
-    try:
-        val_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
-                split='val', indexes=label_idx, once=False, batch_size=batch_size,
-                ahead=ahead, thread=True)
-    except IndexError as err:
-        print(err.args)
-        train_loader.close()
-        return
+    if not validation:
+        try:
+            val_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
+                    split='val', indexes=label_idx, once=False, batch_size=batch_size,
+                    ahead=ahead, thread=True)
+        except IndexError as err:
+            print(err.args)
+            train_loader.close()
+            return
 
-    val_idx = np.array(val_loader.indexes)
+        val_idx = np.array(val_loader.indexes)
 
-    val_label_categories = []
-    for batch in val_loader.batches():
-        for rec in batch:
-            for cat in label_categories:
-                if rec[cat] != []:
-                    val_label_categories.append(cat)
-                    break
-    assert(len(val_label_categories) == len(val_idx))
+        val_label_categories = []
+        for batch in val_loader.batches():
+            for rec in batch:
+                for cat in label_categories:
+                    if rec[cat] != []:
+                        val_label_categories.append(cat)
+                        break
+        assert(len(val_label_categories) == len(val_idx))
 
     for t in range(num_epochs):
         (_, iou) = run_epoch(blobdata, train_idx, train_label_categories, label_i,
                 fieldmap, thresh, sh, sw, reduction, train_loader, layer, criterion, 
                 optimizer, t+1, train=True, cuda=cuda, iou_threshold=0.5)
-        (_, iou) = run_epoch(blobdata, val_idx, val_label_categories, label_i,
-                fieldmap, thresh, sh, sw, reduction, val_loader, layer, criterion,
-                optimizer, t+1, train=False, cuda=cuda, iou_threshold=0.5)
+        if not validation:
+            (_, iou) = run_epoch(blobdata, val_idx, val_label_categories, label_i,
+                    fieldmap, thresh, sh, sw, reduction, val_loader, layer, criterion,
+                    optimizer, t+1, train=False, cuda=cuda, iou_threshold=0.5)
 
     # Close segmentation prefetcher (i.e. close pools)
     train_loader.close()
@@ -422,7 +426,12 @@ if __name__ == '__main__':
                 type=float,
                 default=0,
                 help='L2 weight decay hyperparameter')
-
+        parser.add_argument(
+                '--validation',
+                action='store_true',
+                default=False,
+                help='Train on the validation set (default: train only on training set)'
+        )
 
         args = parser.parse_args()
         if args.labels is not None:
@@ -448,7 +457,7 @@ if __name__ == '__main__':
                         bias=args.bias, positive=args.positive, 
                         lower_bound=args.lower_bound, num_epochs=args.num_epochs, 
                         lr=args.learning_rate, l1_weight_decay=args.l1_decay,
-                        l2_weight_decay=args.l2_decay,
+                        l2_weight_decay=args.l2_decay,validation=args.validation,
                         cuda=cuda)
 
     except:
