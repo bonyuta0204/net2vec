@@ -290,19 +290,20 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         val_losses.append(val_loss)
         val_accs.append(val_acc)
 
-    f, ax = plt.subplots(1,2, figsize=(8,4))
-    ax[0].plot(range(num_epochs), train_losses, label='train')
-    ax[0].plot(range(num_epochs), val_losses, label='val')
-    ax[0].set_title('BCE Loss (train=%d, val=%d)' % (len(train_targets), len(val_targets)))
-    ax[1].plot(range(num_epochs), train_accs, label='train')
-    ax[1].plot(range(num_epochs), val_accs, label='val')
-    ax[1].set_title('Accuracy (%s, %s)' % (label_name, blob))
-    plt.legend()
-    if fig_path is not None:
-        plt.savefig(fig_path)
-    if show_fig:
-        plt.show()
-    plt.close()
+    if fig_path is not None or show_fig:
+        f, ax = plt.subplots(1,2, figsize=(8,4))
+        ax[0].plot(range(num_epochs), train_losses, label='train')
+        ax[0].plot(range(num_epochs), val_losses, label='val')
+        ax[0].set_title('BCE Loss (train=%d, val=%d)' % (len(train_targets), len(val_targets)))
+        ax[1].plot(range(num_epochs), train_accs, label='train')
+        ax[1].plot(range(num_epochs), val_accs, label='val')
+        ax[1].set_title('Accuracy (%s, %s)' % (label_name, blob))
+        plt.legend()
+        if fig_path is not None:
+            plt.savefig(fig_path)
+        if show_fig:
+            plt.show()
+        plt.close()
 
     # Save weights
     weights = (layer.mask * layer.weight).data.cpu().numpy()
