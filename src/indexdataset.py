@@ -12,6 +12,13 @@ def get_dataset_index(fn):
         if DATASETS[i] in fn:
             return i
 
+def load_image_dataset_label_index(directory):
+    ed = expdir.ExperimentDirectory(directory)                                  
+    info = ed.load_info()                                                       
+    ds = loadseg.SegmentationData(info.dataset)                                 
+    shape = (ds.size(), len(DATASETS), len(ds.label))                                          
+    return ed.open_mmap(part='image_dataset_label', mode='r', dtype=bool,
+        shape=shape)
 
 def create_image_dataset_label_index(directory, batch_size=64, ahead=16):
     ed = expdir.ExperimentDirectory(directory)
