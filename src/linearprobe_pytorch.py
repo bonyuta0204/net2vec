@@ -412,6 +412,17 @@ if __name__ == '__main__':
                 type=int,
                 default=None,
                 help='use GPU for training')
+        parser.add_argument(
+                '--l1_decay',
+                type=float,
+                default=0,
+                help='L1 weight decay hyperparameter')
+        parser.add_argument(
+                '--l2_decay',
+                type=float,
+                default=0,
+                help='L2 weight decay hyperparameter')
+
 
         args = parser.parse_args()
         if args.labels is not None:
@@ -436,7 +447,8 @@ if __name__ == '__main__':
                         ahead=args.ahead, quantile=args.quantile,
                         bias=args.bias, positive=args.positive, 
                         lower_bound=args.lower_bound, num_epochs=args.num_epochs, 
-                        lr=args.learning_rate, 
+                        lr=args.learning_rate, l1_weight_decay=args.l1_decay,
+                        l2_weight_decay=args.l2_decay,
                         cuda=cuda)
 
     except:
