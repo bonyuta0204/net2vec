@@ -35,6 +35,8 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
             suffixes = ['%s_num_filters_%d' % (suffix, n) for n in num_filters]
             suffixes.append(suffix)
 
+        print suffixes
+
         missing_idx = []
         for l in range(L):
             if not ed.has_mmap(blob=blob, part='label_i_%d_weights_disc%s' % (l, suffixes[0])):
@@ -56,6 +58,8 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
                                                   % (l, suffix), mode='r', dtype='float32',
                                                   shape=(4, epochs))
                 results_mmap[l,i,:,:] = label_results_mmap[:,:]
+                print i
+            print l
 
         ed.finish_mmap(weights_mmap)
         if bias:
