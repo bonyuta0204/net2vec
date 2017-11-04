@@ -3,6 +3,7 @@ import numpy as np
 import loadseg
 import expdir
 
+from torchvision.datasets.folder import find_classes, make_dataset
 
 def has_image_to_label(directory):
     ed = expdir.ExperimentDirectory(directory)
@@ -21,26 +22,42 @@ def load_image_to_label(directory):
 def create_image_to_label(directory, batch_size=16, ahead=4):
     ed = expdir.ExperimentDirectory(directory)
     info = ed.load_info()
-    ds = loadseg.SegmentationData(info.dataset)
-    categories = ds.category_names()
-    shape = (ds.size(), len(ds.label))
 
-    pf = loadseg.SegmentationPrefetcher(ds, categories=categories, once=True,
-            batch_size=batch_size, ahead=ahead, thread=False)
+    if 'broden' in info.dataset:
+        ds = loadseg.SegmentationData(info.dataset)
+        categories = ds.category_names()
+        shape = (ds.size(), len(ds.label))
 
-    image_to_label = np.zeros(shape, dtype='int32')
+        pf = loadseg.SegmentationPrefetcher(ds, categories=categories, once=True,
+                batch_size=batch_size, ahead=ahead, thread=False)
 
-    batch_count = 0
-    for batch in pf.batches():
-        if batch_count % 100 == 0:
-            print('Processing batch %d ...' % batch_count)
-        for rec in batch:
-            image_index = rec['i']
-            for cat in categories:
-                if ((type(rec[cat]) is np.ndarray and rec[cat].size > 0) or
-                        type(rec[cat]) is list and len(rec[cat]) > 0):
-                    image_to_label[image_index][np.unique(rec[cat])] = True
-        batch_count += 1
+        image_to_label = np.zeros(shape, dtype='int32')
+
+        batch_count = 0
+        for batch in pf.batches():
+            if batch_count % 100 == 0:
+                print('Processing batch %d ...' % batch_count)
+            for rec in batch:
+                image_index = rec['i']
+                for cat in categories:
+                    if ((type(rec[cat]) is np.ndarray and rec[cat].size > 0) or
+                            type(rec[cat]) is list and len(rec[cat]) > 0):
+                        image_to_label[image_index][np.unique(rec[cat])] = True
+            batch_count += 1
+    elif 'imagenet' in info.dataset:
+        classes, class_to_idx = find_classes(info.dataset)
+        imgs = make_dataset(info.dataset, class_to_idx)
+        _, labels = zip(*imgs)
+        labels = np.array(labels)
+
+        L = 1000
+        shape = (len(labels), L)
+
+        image_to_label = np.zeros(shape)
+
+        for i in range(L):
+            image_to_label[labels == i, i] = 1
+
 
     mmap = ed.open_mmap(part='image_to_label', mode='w+', dtype=bool,
             shape=shape)
