@@ -155,9 +155,13 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
                                 l1_weight_decay=0, l2_weight_decay=0, nesterov=False,
                                 lower_bound=None, optimizer_type='sgd', cuda=False,
                                 fig_path=None, show_fig=True):
-    # Make sure we have a directory to work in
-    # qcode = ('%f' % quantile).replace('0.','').rstrip('0')
-    ed = expdir.ExperimentDirectory(directory)
+    if 'imagenet' in directory or 'ILSVRC' in directory:
+        ed = expdir.ExperimentDirectory(os.path.join(directory, 'train'))
+        ed_val = expdir.ExperimentDirectory(os.path.join(directory, 'val'))
+    else:
+        # Make sure we have a directory to work in
+        # qcode = ('%f' % quantile).replace('0.','').rstrip('0')
+        ed = expdir.ExperimentDirectory(directory)
     # Check if linear weights have already been learned
     if ed.has_mmap(blob=blob, part='label_i_%d_weights_disc%s' % (label_i, suffix)):
         print('%s already has %s, so skipping.' % (directory,
@@ -181,8 +185,9 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         thresh = threshold[:, np.newaxis, np.newaxis]
     # print np.max(thresh), thresh.shape, type(thresh)
     # Map the blob activation data for reading
-    fn_read = ed.mmap_filename(blob=blob)
 
+    fn_read = ed.mmap_filename(blob=blob)
+    blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
     if 'broden' in info.dataset:
         # Load the dataset
         ds = loadseg.SegmentationData(info.dataset)
@@ -201,23 +206,27 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         non_label_idx = np.where(image_to_label[:, label_i] == 0)[0]
         print('Number of positive and negative examples of label %d (%s): %d %d' % (
             label_i, label_name, len(label_idx), len(non_label_idx)))
+        val_blobdata = blobdata
     elif 'imagenet' in info.dataset or 'ILSVRC' in info.dataset:
         # TODO: don't hardcode
         label_desc = np.loadtxt('/users/ruthfong/packages/caffe/data/ilsvrc12/synset_words.txt', str, delimiter='\t')
         label_name = ' '.join(label_desc[label_i].split(',')[0].split()[1:])
-        image_to_label_train = load_image_to_label(os.path.join(directory, 'train'))
+        image_to_label_train = load_image_to_label(os.path.join(directory, 'train'), blob=blob)
         train_label_idx = np.where(image_to_label_train[:, label_i])[0]
         train_non_label_idx = np.where(image_to_label_train[:, label_i])[0]
-        image_to_label_val = load_image_to_label(os.path.join(directory, 'val'))
+        image_to_label_val = load_image_to_label(os.path.join(directory, 'val'), blob=blob)
         val_label_idx = np.where(image_to_label_val[:, label_i])[0]
         val_non_label_idx = np.where(image_to_label_val[:, label_i])[0]
         print('Number of positive and negative examples of label %d (%s): %d %d %d %d' %
               (label_i, label_name, len(train_label_idx), len(train_non_label_idx),
                len(val_label_idx), len(val_non_label_idx)))
+        val_blob_info = ed_val.load_info(blob=blob)
+        val_shape = val_blob_info.shape
+        val_fn_read = ed_val.mmap_filename(blob=blob)
+        val_blobdata = cached_memmap(val_fn_read, mode='r', dtype='float32', shape=val_shape)
     else:
         assert(False)
 
-    blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
 
     criterion = torch.nn.BCEWithLogitsLoss()
     if num_filters is not None:
@@ -242,7 +251,7 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         optimizer = Custom_Adam(layer.parameters(), lr, l1_weight_decay=l1_weight_decay,
                                 l2_weight_decay=l2_weight_decay, lower_bound=lower_bound)
 
-    if 'broden' in ds.dataset:
+    if 'broden' in info.dataset:
         train_label_idx = []
         val_label_idx = []
         for ind in label_idx:
@@ -300,7 +309,7 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
 
         (train_loss, train_acc) = run_epoch(blobdata, train_targets[rand_idx], train_indexes[rand_idx], thresh, layer, criterion,
                       optimizer, t, batch_size=batch_size, train=True, cuda=cuda)
-        (val_loss, val_acc) = run_epoch(blobdata, val_targets, val_indexes, thresh, layer, criterion,
+        (val_loss, val_acc) = run_epoch(val_blobdata, val_targets, val_indexes, thresh, layer, criterion,
                       optimizer, t, batch_size=batch_size, train=False, cuda=cuda)
 
         train_losses.append(train_loss)
