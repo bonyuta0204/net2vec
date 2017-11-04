@@ -319,7 +319,8 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
 
     # Close segmentation prefetcher (i.e. close pools)
     train_loader.close()
-    val_loader.close()
+    if not validation:
+        val_loader.close()
 
     # Save weights
     weights = layer.weight.data.cpu().numpy()
