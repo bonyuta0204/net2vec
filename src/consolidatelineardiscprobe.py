@@ -15,6 +15,12 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
     K = shape[1] # number of units for the given blob
     F = 1 if num_filters is None else len(num_filters) + 1
 
+    if num_filters is None:
+        suffixes = [suffix]
+    else:
+        suffixes = ['%s_num_filters_%d' % (suffix, n) for n in num_filters]
+        suffixes.append(suffix)
+
     if (ed.has_mmap(blob=blob, part='linear_weights_disc%s' % suffix)
         and (not bias or ed.has_mmap(blob=blob, part='linear_bias_disc%s' % suffix))):
         print('Linear weights (and bias) have already been consolidated')
@@ -29,13 +35,6 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
         results_mmap = ed.open_mmap(blob=blob, part='linear_results_disc%s' % suffix,
                                     mode='w+', dtype='float32', shape=(L, F, 4, epochs))
 
-        if num_filters is None:
-            suffixes = [suffix]
-        else:
-            suffixes = ['%s_num_filters_%d' % (suffix, n) for n in num_filters]
-            suffixes.append(suffix)
-
-        print suffixes
 
         missing_idx = []
         for l in range(L):
@@ -58,7 +57,6 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
                                                   % (l, suffix), mode='r', dtype='float32',
                                                   shape=(4, epochs))
                 results_mmap[l,i,:,:] = label_results_mmap[:,:]
-                print i
             print l
 
         ed.finish_mmap(weights_mmap)
