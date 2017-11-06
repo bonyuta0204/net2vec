@@ -10,11 +10,18 @@ def has_image_to_label(directory):
     return ed.has_mmap(part='image_to_label')
 
 
-def load_image_to_label(directory):
+def load_image_to_label(directory, blob=None):
     ed = expdir.ExperimentDirectory(directory)                                  
     info = ed.load_info()                                                       
-    ds = loadseg.SegmentationData(info.dataset)                                 
-    shape = (ds.size(), len(ds.label))                                          
+    if 'broden' in info.dataset:
+        ds = loadseg.SegmentationData(info.dataset)                                 
+        shape = (ds.size(), len(ds.label))                                          
+    elif 'imagenet' in info.dataset or 'ILSVRC' in info.dataset:
+        assert(blob is not None)
+        blob_info = ed.load_info(blob=blob)
+        shape = (blob_info.shape[0], 1000)
+    else:
+        assert(False)
     return ed.open_mmap(part='image_to_label', mode='r', dtype=bool,
         shape=shape)
 
@@ -23,6 +30,7 @@ def create_image_to_label(directory, batch_size=16, ahead=4):
     ed = expdir.ExperimentDirectory(directory)
     info = ed.load_info()
 
+    print info.dataset
     if 'broden' in info.dataset:
         ds = loadseg.SegmentationData(info.dataset)
         categories = ds.category_names()
@@ -44,7 +52,7 @@ def create_image_to_label(directory, batch_size=16, ahead=4):
                             type(rec[cat]) is list and len(rec[cat]) > 0):
                         image_to_label[image_index][np.unique(rec[cat])] = True
             batch_count += 1
-    elif 'imagenet' in info.dataset:
+    elif 'imagenet' in info.dataset or 'ILSVRC' in info.dataset:
         classes, class_to_idx = find_classes(info.dataset)
         imgs = make_dataset(info.dataset, class_to_idx)
         _, labels = zip(*imgs)
@@ -57,6 +65,8 @@ def create_image_to_label(directory, batch_size=16, ahead=4):
 
         for i in range(L):
             image_to_label[labels == i, i] = 1
+    else:
+        assert(False)
 
 
     mmap = ed.open_mmap(part='image_to_label', mode='w+', dtype=bool,
