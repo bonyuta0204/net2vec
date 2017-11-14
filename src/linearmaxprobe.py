@@ -10,14 +10,14 @@ from scipy.io import savemat
 import loadseg
 
 def max_probe(directory, blob, batch_size=None, quantile=0.005, 
-        suffix='', normalize=True, should_thresh=False, disc=False):
+        suffix='', new_suffix='', normalize=True, should_thresh=False, disc=False):
     # Make sure we have a directory to work in
     ed = expdir.ExperimentDirectory(directory)
 
     # If it's already computed, then skip it!!!
     if disc:
         suffix = '_disc%s' % suffix
-    print "Checking", ed.mmap_filename(blob=blob, part='linear_imgmax%s' % suffix)
+    print "Checking", ed.mmap_filename(blob=blob, part='linear_imgmax%s%s' % (suffix, new_suffix))
     if ed.has_mmap(blob=blob, part='linear_imgmax%s' % suffix):
         print "Already have %s-imgmax.mmap, skipping." % (blob)
         return
@@ -42,7 +42,7 @@ def max_probe(directory, blob, batch_size=None, quantile=0.005,
     
     print 'Computing imgmax for %s shape %r' % (blob, shape)
     data = ed.open_mmap(blob=blob, shape=shape)
-    imgmax = ed.open_mmap(blob=blob, part='linear_imgmax%s' % suffix,
+    imgmax = ed.open_mmap(blob=blob, part='linear_imgmax%s%s' % (suffix, new_suffix),
             mode='w+', shape=(N,L))
     if disc:
         assert(ed.has_mmap(blob=blob, part='linear_weights%s' % suffix))
@@ -125,12 +125,16 @@ if __name__ == '__main__':
                 '--suffix',
                 default='',
                 type=str)
+        parser.add_argument(
+                '--new_suffix',
+                default='',
+                type=str)
 
         args = parser.parse_args()
         for blob in args.blobs:
             max_probe(args.directory, blob, args.batch_size, suffix=args.suffix,
                     normalize=args.normalize, disc=args.disc, quantile=args.quantile,
-                    should_thresh=args.thresh)
+                    should_thresh=args.thresh, new_suffix=args.new_suffix)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
