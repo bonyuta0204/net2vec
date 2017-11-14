@@ -10,7 +10,7 @@ from scipy.io import savemat
 import loadseg
 
 def max_probe(directory, blob, batch_size=None, quantile=0.005, 
-        suffix='', normalize=True, disc=False):
+        suffix='', normalize=True, should_thresh=False, disc=False):
     # Make sure we have a directory to work in
     ed = expdir.ExperimentDirectory(directory)
 
@@ -32,12 +32,13 @@ def max_probe(directory, blob, batch_size=None, quantile=0.005,
     K = shape[1]
     L = ds.label_size()
 
-    #if quantile == 1:
-    #    thresh = np.zeros((K,1,1))
-    #else:
-    #    quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(K, -1))
-    #    threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
-    #    thresh = threshold[:, np.newaxis, np.newaxis]
+    if should_thresh:
+        if quantile == 1:
+            thresh = np.zeros((1,1,K,1,1))
+        else:
+            quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(K, -1))
+            threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
+            thresh = threshold[numpy.newaxis,numpy.newaxis,:,numpy.newaxis,numpy.newaxis]
     
     print 'Computing imgmax for %s shape %r' % (blob, shape)
     data = ed.open_mmap(blob=blob, shape=shape)
@@ -69,7 +70,9 @@ def max_probe(directory, blob, batch_size=None, quantile=0.005,
         last_batch_time = batch_time
         print 'Imgmax %s index %d: %f %f' % (blob, i, rate, batch_rate)
         sys.stdout.flush()
-        batch = data[i:i+batch_size][:,numpy.newaxis,:,:,:]
+        batch = data[i:i+batch_size][:,numpy.newaxis,:,:,:] # (batch_size, L, K, S, S)
+        if should_thresh:
+            batch = (batch > thresh).astype(float)
         imgmax[i:i+batch_size,:] = (batch * all_weights[numpy.newaxis,:,:,numpy.newaxis,numpy.newaxis]).sum(axis=2).max(axis=(2,3))
     print 'Writing imgmax'
     sys.stdout.flush()
@@ -111,6 +114,14 @@ if __name__ == '__main__':
                 action='store_true',
                 default=False)
         parser.add_argument(
+                '--thresh',
+                action='store_true',
+                default=False)
+        parser.add_argument(
+                '--quantile',
+                type=float,
+                default=0.005)
+        parser.add_argument(
                 '--suffix',
                 default='',
                 type=str)
@@ -118,7 +129,8 @@ if __name__ == '__main__':
         args = parser.parse_args()
         for blob in args.blobs:
             max_probe(args.directory, blob, args.batch_size, suffix=args.suffix,
-                    normalize=args.normalize, disc=args.disc)
+                    normalize=args.normalize, disc=args.disc, quantile=args.quantile,
+                    should_thresh=args.thresh)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
