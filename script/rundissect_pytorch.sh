@@ -1,25 +1,28 @@
 # pre-defined setting
 
-WORKDIR=probes
+#WORKDIR=probes
+WORKDIR="/scratch/shared/nfs1/ruthfong"
 #DIR=pytorch_alexnet_imagenet
-DIR=pytorch_vgg19_imagenet
-#ARCH='alexnet' # [alexnet,squeezenet1_1,resnet18,...]. It should work for all the models in https://github.com/pytorch/vision/tree/master/torchvision/models
+#DIR="pytorch_vgg19_imagenet"
+DIR="pytorch_alexnet_imagenet"
+ARCH='alexnet' # [alexnet,squeezenet1_1,resnet18,...]. It should work for all the models in https://github.com/pytorch/vision/tree/master/torchvision/models
 #LAYERS="features"
-#LAYERS="features.1 features.4 features.7 features.9 features.11"
-ARCH="vgg19"
-LAYERS="features.3 features.8 features.17 features.26 features.35"
+LAYERS="features.1 features.4 features.7 features.9 features.11"
+#ARCH="vgg19"
+#LAYERS="features.3 features.8 features.17 features.26 features.35"
 NUMCLASSES=1000
 #DATASET=dataset/broden1_227
-DATASET=dataset/broden1_224
-#INPUTSIZE=227
-INPUTSIZE=224
-GPU="0"
+#DATASET=dataset/broden1_224
+INPUTSIZE=227
+#INPUTSIZE=224
+GPU="0 1"
 WEIGHTS="None"
 
 # default setting
 THRESHOLD=0.04
 TALLYDEPTH=2048
-PARALLEL=4
+#PARALLEL=4
+PARALLEL=0
 TALLYBATCH=16
 PROBEBATCH=64
 QUANTILE="0.005"

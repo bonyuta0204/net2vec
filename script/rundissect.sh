@@ -16,7 +16,8 @@
 
 # Defaults
 THRESHOLD="0.04"
-WORKDIR="dissection"
+#WORKDIR="dissection"
+WORKDIR="/scratch/shared/nfs1/ruthfong"
 TALLYDEPTH=2048
 PARALLEL=4
 TALLYBATCH=16
