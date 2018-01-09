@@ -39,11 +39,16 @@ class AverageMeter(object):
 
 class CustomLayer(nn.Module):
     def __init__(self, num_features, upsample=True, up_size=(224,224), 
-            act=True, positive=False, bias=False):
+            mask_idx=None, act=True, positive=False, bias=False, cuda=False):
         super(CustomLayer, self).__init__()
         self.num_features = num_features
         self.positive = positive
         self.weight = Parameter(torch.Tensor(self.num_features))
+        mask_ = torch.ones(self.num_features)
+        if mask_idx is not None:
+            mask_[:] = 0
+            mask_[mask_idx] = 1
+        self.mask = Variable(mask_.cuda() if cuda else mask_)
         if bias:
             self.bias = Parameter(torch.Tensor(1))
         else:
@@ -65,7 +70,7 @@ class CustomLayer(nn.Module):
             self.weight.data.uniform_(-stdv, stdv)
 
     def forward(self, x):
-        y = x * self.weight.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
+        y = x * (self.mask * self.weight).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
         #print(y.size(), y.sum(1).size(), self.bias.size(), (y.sum(1) + self.bias).size())
         if self.act:
             if self.up:
@@ -178,7 +183,7 @@ def run_epoch(activations, act_idx, label_categories, label_i, fieldmap, thresh,
     return (losses.avg, iou)
 
 
-def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4, 
+def linear_probe(directory, blob, label_i, suffix='', init_suffix='', num_filters=None, batch_size=16, ahead=4, 
         quantile=0.005, bias=False, positive=False, num_epochs=30, lr=1e-4, momentum=0.9, 
         l1_weight_decay=0, l2_weight_decay=0, validation=False, nesterov=False, lower_bound=None,
         cuda=False):
@@ -186,6 +191,7 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
     #qcode = ('%f' % quantile).replace('0.','').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
     # Check if linear weights have already been learned 
+    print ed.mmap_filename(blob=blob, part='label_i_%s_weights%s' % (label_i, suffix))
     if ed.has_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix)):
         print('%s already has %s, so skipping.' % (directory,
             ed.mmap_filename(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix))))
@@ -278,8 +284,24 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
     # Prepare to learn linear weights with a sigmoid activation after
     # the linear layer
     #layer = CustomLayer(unit_size, upsample=False, act=True, positive=False)
-    layer = CustomLayer(unit_size, upsample=True, up_size=(sh,sw), act=True, 
-            bias=bias, positive=positive)
+    if num_filters is not None:
+        if ed.has_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, init_suffix)):
+            init_weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, init_suffix), 
+                    mode='r', dtype='float32', shape=unit_size)
+        elif ed.has_mmap(blob=blob, part='linear_weights%s' % (init_suffix)):
+            all_weights_mmap = ed.open_mmap(blob=blob, part='linear_weights%s' % init_suffix,
+                    mode='r', dtype='float32', shape=(ds.label_size(),unit_size))
+            init_weights_mmap = all_weights_mmap[label_i]
+        else:
+            assert(False)
+        sorted_idx = np.argsort(np.abs(init_weights_mmap))[::-1]
+        mask_idx = np.zeros(unit_size, dtype=int)
+        mask_idx[sorted_idx[:num_filters]] = 1
+        layer = CustomLayer(unit_size, upsample=True, up_size=(sh,sw), act=True,
+                bias=bias, positive=positive, mask_idx=torch.ByteTensor(mask_idx), cuda=cuda)
+    else:
+        layer = CustomLayer(unit_size, upsample=True, up_size=(sh,sw), act=True, 
+                bias=bias, positive=positive, cuda=cuda)
     if cuda:
         layer.cuda()
 
@@ -323,7 +345,7 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
         val_loader.close()
 
     # Save weights
-    weights = layer.weight.data.cpu().numpy()
+    weights = (layer.mask * layer.weight).data.cpu().numpy()
     weights_mmap = ed.open_mmap(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix),
             mode='w+', dtype='float32', shape=weights.shape)
     weights_mmap[:] = weights[:]
@@ -334,6 +356,7 @@ def linear_probe(directory, blob, label_i, suffix='', batch_size=16, ahead=4,
                 mode='w+', dtype='float32', shape=(1,))
         bias_mmap[:] = bias_v[:]
         ed.finish_mmap(bias_mmap)
+    print '%s finished' % ed.mmap_filename(blob=blob, part='label_i_%d_weights%s' % (label_i, suffix))
 
 
 if __name__ == '__main__':
@@ -431,8 +454,18 @@ if __name__ == '__main__':
                 '--validation',
                 action='store_true',
                 default=False,
-                help='Train on the validation set (default: train only on training set)'
-        )
+                help='Train on the validation set (default: train only on training set)')
+        parser.add_argument(
+                '--num_filters',
+                type=int,
+                nargs='*',
+                default=None,
+                help="TODO")
+        parser.add_argument(
+                '--init_suffix',
+                type=str,
+                default='',
+                help='TODO')
 
         args = parser.parse_args()
         if args.labels is not None:
@@ -451,16 +484,24 @@ if __name__ == '__main__':
         print torch.cuda.device_count(), use_mult_gpu, cuda
         for blob in args.blobs:
             for label_i in labels:
-                linear_probe(args.directory, blob, int(label_i),
-                        suffix=args.suffix,
-                        batch_size=args.batch_size,
-                        ahead=args.ahead, quantile=args.quantile,
-                        bias=args.bias, positive=args.positive, 
-                        lower_bound=args.lower_bound, num_epochs=args.num_epochs, 
-                        lr=args.learning_rate, l1_weight_decay=args.l1_decay,
-                        l2_weight_decay=args.l2_decay,validation=args.validation,
-                        cuda=cuda)
-
+                if args.num_filters is not None:
+                    suffix = ['%s_num_filters_%d' % (args.suffix, n) for n in args.num_filters]
+                    num_filters = args.num_filters
+                else:
+                    num_filters = [None]
+                    suffix = [args.suffix]
+                for i in range(len(num_filters)):
+                    linear_probe(args.directory, blob, int(label_i),
+                            suffix=suffix[i],
+                            init_suffix=args.init_suffix,
+                            num_filters=num_filters[i],
+                            batch_size=args.batch_size,
+                            ahead=args.ahead, quantile=args.quantile,
+                            bias=args.bias, positive=args.positive, 
+                            lower_bound=args.lower_bound, num_epochs=args.num_epochs, 
+                            lr=args.learning_rate, l1_weight_decay=args.l1_decay,
+                            l2_weight_decay=args.l2_decay,validation=args.validation,
+                            cuda=cuda)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
