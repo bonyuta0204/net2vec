@@ -17,13 +17,17 @@ import time
 
 
 def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16, 
-        ahead=4,  quantile=0.005, bias=False, positive=False, cuda=False):
+        ahead=4,  quantile=0.005, bias=False, positive=False, cuda=False, force=False):
     qcode = ('%f' % quantile).replace('0.','.').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
     if (ed.has_mmap(blob=blob, part='linear_ind_ious%s' % suffix) and 
             ed.has_mmap(blob=blob, part='linear_set_ious%s' % suffix)):
         print('Linear weights have already been probed.')
-        return
+        print ed.mmap_filename(blob=blob, part='linear_set_val_ious%s' % suffix)
+        if not force:
+            return
+        else:
+            print('Forcefully continuing...')
     info = ed.load_info()
     seg_size = get_seg_size(info.input_dim)
     blob_info = ed.load_info(blob=blob)
@@ -44,7 +48,7 @@ def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16,
     blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
     image_to_label = load_image_to_label(directory)
 
-    if ed.has_mmap(blob=blob, part='linear_ind_ious%s' % suffix, inc=True):
+    if ed.has_mmap(blob=blob, part='linear_ind_ious%s' % suffix, inc=True) and not force:
         assert(ed.has_mmap(blob=blob, part='linear_set_ious%s' % suffix, inc=True))
         ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='r+',
                 inc=True, dtype='float32', shape=(L,N))
@@ -52,8 +56,14 @@ def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16,
                 inc=True, dtype='float32', shape=(L,))
         set_ious_train = ed.open_mmap(blob=blob, part='linear_set_train_ious%s' % suffix,
                 mode='r+', inc=True, dtype='float32', shape=(L,))
-        set_ious_val = ed.open_mmap(blob=blob, part='linear_set_val_ious%s' % suffix, 
-                mode='r+', inc=True, dtype='float32', shape=(L,))
+        try:
+            set_ious_val = ed.open_mmap(blob=blob, part='linear_set_val_ious%s' % suffix, 
+                    mode='r+', inc=True, dtype='float32', shape=(L,))
+        except:
+            set_ious_val = ed.open_mmap(blob=blob, part='linear_set_val_ious%s' % suffix, 
+                    mode='r+',  dtype='float32', shape=(L,))
+
+
     else:
         ind_ious = ed.open_mmap(blob=blob, part='linear_ind_ious%s' % suffix, mode='w+',
                 dtype='float32', shape=(L,N))
@@ -112,7 +122,7 @@ def probe_linear(directory, blob, suffix='', start=None, end=None,batch_size=16,
             label_i, label_name, num_imgs))
 
         model = CustomLayer(K, upsample=True, up_size=seg_size, act=True, 
-                bias=bias, positive=positive)
+                bias=bias, positive=positive, cuda=cuda)
         model.weight.data[...] = torch.Tensor(weights)
         if bias:
             model.bias.data[...] = torch.Tensor(bias_v)
@@ -204,6 +214,8 @@ if __name__ == '__main__':
         parser.add_argument('--quantile', type=float, default=0.005)
         parser.add_argument('--bias', action='store_true', default=False)
         parser.add_argument('--positive', action='store_true', default=False)
+        parser.add_argument('--force', action='store_true', default=False)
+        parser.add_argument('--num_filters', type=int, nargs='*', default=None)
         parser.add_argument('--gpu', type=int, default=None)
 
         args = parser.parse_args()
@@ -219,11 +231,18 @@ if __name__ == '__main__':
         print(torch.cuda.device_count(), use_mult_gpu, cuda)
 
         for blob in args.blobs:
-            probe_linear(args.directory, blob, suffix=args.suffix,
-                    start=args.start, end=args.end, 
-                    batch_size=args.batch_size, ahead=args.ahead,
-                    quantile=args.quantile, bias=args.bias, 
-                    positive=args.positive, cuda=cuda)
+            if args.num_filters is not None:
+                suffixes = ['%s_num_filters_%d' % (args.suffix, n) for n in args.num_filters]
+            else:
+                suffixes = [args.suffix]
+            for i in range(len(suffixes)):
+                probe_linear(args.directory, blob, suffix=suffixes[i],
+                        start=args.start, end=args.end, 
+                        batch_size=args.batch_size, ahead=args.ahead,
+                        quantile=args.quantile, bias=args.bias, 
+                        positive=args.positive,
+                        cuda=cuda,
+                        force=args.force)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
