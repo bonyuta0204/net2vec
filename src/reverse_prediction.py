@@ -26,6 +26,19 @@ def iou_union(input, target, target_thresh, threshold=0.5):
                                            max=1.), dim=-1), dim=-1)
 
 
+def BCELoss2d(input, target, alpha=None):
+    '''
+    Copied from linearprobe_pytorch.py
+    '''
+    if alpha is None:
+        alpha = 1
+        beta = 1
+    else:
+        assert(alpha >= 0 and alpha <= 1)
+        beta = 1 - alpha
+        return -1./input.size(0) * torch.sum(alpha*torch.mul(target, input) + beta*torch.mul(1-target, 1-input))
+
+
 def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch_size, criterion, optimizer,
               epoch, train=False, cuda=False, iou_threshold=0.0):
     if train:
@@ -41,8 +54,8 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
     iou_intersects = np.zeros(N)
     iou_unions = np.zeros(N)
 
-    no_quantile = not np.any(thresh)
-    target_thresh = float(thresh[filter_i])
+    #no_quantile = not np.any(thresh)
+    target_thresh = float(thresh)
     up = nn.Upsample(size=conceptdata.shape[2:], mode='bilinear')
 
     i = 0
@@ -60,14 +73,14 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
         input_var = (Variable(input.cuda(), volatile=volatile) if cuda
                      else Variable(input, volatile=volatile))
         startt = time.time()
-        target = torch.Tensor(blobdata[example_idx[idx],filter_i,np.newaxis])
+        target = torch.Tensor(blobdata[example_idx[idx],filter_i,np.newaxis]) # new axis needed to do bilinear upsampling
         #print 'Time to load blob data:', time.time() - startt
-        if no_quantile: 
-            target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
-                          else Variable(target, volatile=volatile)).squeeze())
-        else:
-            target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
-                          else Variable(target, volatile=volatile)) > target_thresh).float().squeeze()
+        #if no_quantile: 
+        #    target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
+        #                  else Variable(target, volatile=volatile)).squeeze())
+        #else:
+        target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
+                      else Variable(target, volatile=volatile)) > target_thresh).float().squeeze()
         output_var = model(input_var)
         loss = criterion(output_var, target_var)
         losses.update(loss.data[0], input.size(0))
@@ -112,10 +125,11 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
     K = shape[1]
 
     if quantile == 1:
-        thresh = np.zeros((K,1,1))
+        thresh = np.zeros((1,1))
     else:
         quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(K,-1))
-        threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
+        #threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
+        threshold = quantdata[filter_i, int(round(quantdata.shape[1] * quantile))]
         #thresh = threshold[:, np.newaxis, np.newaxis]
         thresh = threshold
 
@@ -127,21 +141,30 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
     train_idx = np.array([i for i in range(N) if ds.split(i) == 'train'])
     val_idx = np.array([i for i in range(N) if ds.split(i) == 'val'])
 
+    # calculate mean non-negative filter activation
+    perc_label = []
+    for i in train_idx:
+        perc_label.append(np.sum((blobdata[i,filter_i] > thresh).astype(float)) / float(np.prod(shape[2:])))
+    alpha = float(1. - np.mean(perc_label))
+
+    print('Alpha for filter %d: %f' % (filter_i, alpha))
+
     layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias, cuda=cuda)
 
     if prev_suffix is not None:
         prev_weights_mmap  = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, prev_suffix),
                                 mode='r', shape=layer.weights.shape)
         layer.weights.data[:] = torch.Tensor(prev_weights_mmap[:])
-    if cuda: # TODO: Debug why this isn't working on mistborn :(
+    if cuda:
         layer = layer.cuda()
 
-    if quantile == 1:
-        criterion = nn.MSELoss()
-    else:
-        criterion = nn.BCEWithLogitsLoss()
-    if cuda:
-        criterion = criterion.cuda()
+    #if quantile == 1:
+    #    criterion = nn.MSELoss()
+    #else:
+    #    criterion = nn.BCEWithLogitsLoss()
+    #if cuda:
+    #    criterion = criterion.cuda()
+    criterion = lambda x,y: BCELoss2d(x,y,alpha)
 
     optimizer = Custom_SGD(layer.parameters(), lr, momentum, l1_weight_decay=l1_weight_decay,
                            l2_weight_decay=l2_weight_decay, nesterov=nesterov, lower_bound=lower_bound)
