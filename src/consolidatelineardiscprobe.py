@@ -5,13 +5,22 @@ import os
 
 def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix='', epochs=30, delete=False):
     ed = expdir.ExperimentDirectory(directory)
-    info = ed.load_info()
+    try:
+        info = ed.load_info()
+    except:
+        ed = expdir.ExperimentDirectory(os.path.join(directory, 'train'))
+        #ed_val = expdir.ExperimentDirectory(os.path.join(directory, 'val'))
+        info = ed.load_info()
+        assert('imagenet' in info.dataset or 'ILSVRC' in info.dataset)
+
     blob_info = ed.load_info(blob=blob)
     shape = blob_info.shape
-    ds = loadseg.SegmentationData(info.dataset)
-
-    L = ds.label_size() # number of labels (including background at index 0)
-    N = ds.size() # total number of images in the dataset
+    if 'broden' in info.dataset:
+        ds = loadseg.SegmentationData(info.dataset)
+        L = ds.label_size()
+    elif 'imagenet' in info.dataset or 'ILSVRC' in info.dataset:
+        L = 1000
+    N = shape[0] # total number of images in the dataset
     K = shape[1] # number of units for the given blob
     F = 1 if num_filters is None else len(num_filters) + 1
 
@@ -20,6 +29,8 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
     else:
         suffixes = ['%s_num_filters_%d' % (suffix, n) for n in num_filters]
         suffixes.append(suffix)
+        suffix = '%s_num_filters_%d' % (suffix, F)
+
 
     if (ed.has_mmap(blob=blob, part='linear_weights_disc%s' % suffix)
         and (not bias or ed.has_mmap(blob=blob, part='linear_bias_disc%s' % suffix))):
