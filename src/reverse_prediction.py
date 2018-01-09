@@ -27,7 +27,7 @@ def iou_union(input, target, target_thresh, threshold=0.5):
 
 
 def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch_size, criterion, optimizer,
-              epoch, train=False, cuda=False, iou_threshold=0.5):
+              epoch, train=False, cuda=False, iou_threshold=0.0):
     if train:
         model.train()
         volatile=False
@@ -38,15 +38,16 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
     N = len(example_idx)
     num_batches = int(np.ceil(N/float(batch_size)))
     losses = AverageMeter()
-    iou_intersects = []
-    iou_unions = []
+    iou_intersects = np.zeros(N)
+    iou_unions = np.zeros(N)
 
+    no_quantile = not np.any(thresh)
     target_thresh = float(thresh[filter_i])
     up = nn.Upsample(size=conceptdata.shape[2:], mode='bilinear')
 
     i = 0
     start = time.time()
-    for batch_i in range(num_batches):
+    for batch_i in range(100):
         if (i+1)*batch_size < N:
             idx = range(i*batch_size, (i+1)*batch_size)
         else:
@@ -55,50 +56,48 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
 
         startt = time.time()
         input = torch.Tensor(conceptdata[example_idx[idx],1:])
-        print 'Time to load concept data:', time.time() - startt
+        #print 'Time to load concept data:', time.time() - startt
         input_var = (Variable(input.cuda(), volatile=volatile) if cuda
                      else Variable(input, volatile=volatile))
         startt = time.time()
         target = torch.Tensor(blobdata[example_idx[idx],filter_i,np.newaxis])
-        print 'Time to load blob data:', time.time() - startt
-        target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
-                      else Variable(target, volatile=volatile)) > target_thresh).float().squeeze()
+        #print 'Time to load blob data:', time.time() - startt
+        if no_quantile: 
+            target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
+                          else Variable(target, volatile=volatile)).squeeze())
+        else:
+            target_var = (up(Variable(target.cuda(), volatile=volatile) if cuda
+                          else Variable(target, volatile=volatile)) > target_thresh).float().squeeze()
         output_var = model(input_var)
         loss = criterion(output_var, target_var)
-        print loss
         losses.update(loss.data[0], input.size(0))
-        iou_intersects.extend(iou_intersect(output_var, target_var, target_thresh, iou_threshold
-                                            ).data.cpu().numpy())
-        iou_unions.extend(iou_union(output_var, target_var, target_thresh, iou_threshold
-                                    ).data.cpu().numpy())
-        print 'h'
+        iou_intersects[idx] = iou_intersect(output_var, target_var, target_thresh, iou_threshold
+                                            ).data.cpu().numpy()
+        iou_unions[idx] = iou_union(output_var, target_var, target_thresh, iou_threshold
+                                    ).data.cpu().numpy()
         if train:
-            print 'h1'
             optimizer.zero_grad()
-            print 'h2'
             loss.backward()
-            print 'h3'
             optimizer.step()
-        print 'h4'
 
-        set_iou = np.true_divide(np.sum(iou_intersects), np.sum(iou_unions))
+        set_iou = np.true_divide(np.sum(iou_intersects[:idx[-1]]), np.sum(iou_unions[:idx[-1]]))
         ind_ious = np.true_divide(iou_intersects, iou_unions)
 
         if train:
-            print('Epoch {0}\t'
+            print('Epoch {}[{}/{}]\t'
                   'Avg Loss {losses.avg:.4f} \t'
-                  'Set IoU {1}\t'
-                  'Time {2}\t'.format(epoch, set_iou, time.time()-start, losses=losses))
+                  'Set IoU {}\t'
+                  'Time {}\t'.format(epoch, batch_i+1, num_batches, set_iou, time.time()-start, losses=losses))
         else:
-            print('Test\t'
+            print('Test [{}/{}]\t'
                   'Avg Loss {losses.avg:.4f} \t'
-                  'Set IoU {0}\t'
-                  'Time {1}\t'.format(set_iou, time.time()-start, losses=losses))
+                  'Set IoU {}\t'
+                  'Time {}\t'.format(batch_i+1, num_batches, set_iou, time.time()-start, losses=losses))
 
-        return (losses.avg, set_iou, ind_ious)
+    return (losses.avg, set_iou, ind_ious)
 
 
-def reverse_linear_probe(directory, blob, filter_i, suffix='', batch_size=64, quantile=0.005,
+def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None, batch_size=64, quantile=0.005,
                          bias=False, positive=False, num_epochs=30, lr=1e-4, momentum=0.9,
                          l1_weight_decay=0, l2_weight_decay=0, validation=False, nesterov=False,
                          lower_bound=None, cuda=False):
@@ -113,7 +112,7 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', batch_size=64, qu
     K = shape[1]
 
     if quantile == 1:
-        thresh = None
+        thresh = np.zeros((K,1,1))
     else:
         quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(K,-1))
         threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
@@ -128,12 +127,21 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', batch_size=64, qu
     train_idx = np.array([i for i in range(N) if ds.split(i) == 'train'])
     val_idx = np.array([i for i in range(N) if ds.split(i) == 'val'])
 
-    layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias)
-    if cuda: # TODO: Debug why this isn't working on mistborn :(
-        layer.cuda()
+    layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias, cuda=cuda)
 
-    #criterion = nn.MSELoss()
-    criterion = nn.BCEWithLogitsLoss()
+    if prev_suffix is not None:
+        prev_weights_mmap  = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, prev_suffix),
+                                mode='r', shape=layer.weights.shape)
+        layer.weights.data[:] = torch.Tensor(prev_weights_mmap[:])
+    if cuda: # TODO: Debug why this isn't working on mistborn :(
+        layer = layer.cuda()
+
+    if quantile == 1:
+        criterion = nn.MSELoss()
+    else:
+        criterion = nn.BCEWithLogitsLoss()
+    if cuda:
+        criterion = criterion.cuda()
 
     optimizer = Custom_SGD(layer.parameters(), lr, momentum, l1_weight_decay=l1_weight_decay,
                            l2_weight_decay=l2_weight_decay, nesterov=nesterov, lower_bound=lower_bound)
@@ -144,11 +152,11 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', batch_size=64, qu
         (trn_loss, trn_set_iou, trn_ind_ious) = run_epoch(blobdata, conceptdata, train_idx,
                                                           filter_i, thresh, layer, batch_size, criterion,
                                                           optimizer, t+1, train=True, cuda=cuda,
-                                                          iou_threshold=0.5)
+                                                          iou_threshold=0)
         (val_loss, val_set_iou, val_ind_ious) = run_epoch(blobdata, conceptdata, val_idx,
                                                           filter_i, thresh, layer, batch_size, criterion,
-                                                          optimizer, t+1, train=True, cuda=cuda,
-                                                          iou_threshold=0.5)
+                                                          optimizer, t+1, train=False, cuda=cuda,
+                                                          iou_threshold=0)
         results[0][t] = trn_loss
         results[1][t] = val_loss
         results[2][t] = trn_set_iou
@@ -177,7 +185,7 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', batch_size=64, qu
 
     if bias:
         bias_v = layer.bias.data.cpu().numpy()
-        bias_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, suffix),
+        bias_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_bias%s' % (filter_i, suffix),
                                  mode='w+', shape=(1,))
         bias_mmap[:] = bias_v[:]
         ed.finish_mmap(bias_mmap)
@@ -206,6 +214,9 @@ if __name__ == '__main__':
         parser.add_argument('--suffix',
                             type=str,
                             default='')
+        parser.add_argument('--prev_suffix',
+                            type=str,
+                            default=None)
         parser.add_argument('--batch_size',
                             type=int,
                             default=64)
@@ -249,6 +260,7 @@ if __name__ == '__main__':
             for filter_i in filters:
                 reverse_linear_probe(args.directory, blob, filter_i,
                                      suffix=args.suffix,
+                                     prev_suffix=args.prev_suffix,
                                      batch_size=args.batch_size,
                                      quantile=args.quantile,
                                      bias=args.bias,
