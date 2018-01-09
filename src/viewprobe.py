@@ -4,6 +4,7 @@ viewprobe creates visualizations for a certain eval.
 
 import glob
 import os
+import sys
 import numpy
 import re
 import upsample
@@ -12,6 +13,10 @@ import loadseg
 from scipy.misc import imread, imresize, imsave
 from loadseg import normalize_label
 import expdir
+
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
 
 class NetworkProbe:
     def __init__(self, directory, blobs=None):
@@ -32,7 +37,7 @@ class NetworkProbe:
             sys.stdout.flush()
         ta, tg, ti = self.summarize_tally(layer)
         labelcat = onehot(primary_categories_per_index(self.ds))
-        tc = np.count_act_with_labelcat(layer)
+        tc = self.count_act_with_labelcat(layer)
         # If we were doing per-category activations p, then:
         # c = numpy.dot(p, labelcat.transpose())
         epsilon = 1e-20 # avoid division-by-zero
@@ -66,7 +71,7 @@ class NetworkProbe:
 
     def generate_html_summary(self, layer,
             imsize=64, imcount=16, imscale=None, tally_stats=None,
-            gridwidth=None, verbose=False):
+            gridwidth=None, use_fieldmap=True, verbose=False):
         print 'Generating html summary', (
             self.ed.filename(['html', '%s.html' % expdir.fn_safe(layer)]))
         # Grab tally stats
@@ -102,7 +107,7 @@ class NetworkProbe:
             for x, index in enumerate(top[unit]):
                 row = x // gridwidth
                 col = x % gridwidth
-                vis = self.activation_visualization(layer, unit, index)
+                vis = self.activation_visualization(layer, unit, index, use_fieldmap=use_fieldmap)
                 if vis.shape[:2] != (imsize, imsize):
                     vis = imresize(vis, (imsize, imsize))
                 tiled[row*(imsize+1):row*(imsize+1)+imsize,
@@ -219,7 +224,7 @@ class NetworkProbe:
         return t[:count]
 
     # Generates a mask at the "lp.level" quantile.
-    def activation_mask(self, layer, unit, index, shape=None):
+    def activation_mask(self, layer, unit, index, shape=None, use_fieldmap=True):
         if shape is None:
              record, shape = self.instance_data(index)
         sw, sh = shape
@@ -229,16 +234,22 @@ class NetworkProbe:
         fieldmap = lp.fieldmap
         quantdata = lp.quantdata
         threshold = quantdata[unit, int(round(quantdata.shape[1] * lp.level))]
-        up = upsample.upsampleL(
-                fieldmap, blobdata[index:index+1, unit],
-                shape=(self.ih, self.iw), scaleshape=(sh, sw))[0]
+        if use_fieldmap:
+            up = upsample.upsampleL(
+                    fieldmap, blobdata[index:index+1, unit],
+                    shape=(self.ih, self.iw), scaleshape=(sh, sw))[0]
+        else:
+            upsample_f = nn.Upsample(size=(self.ih, self.iw), mode='bilinear')
+            up = numpy.squeeze(upsample_f(Variable(torch.Tensor(blobdata[index:index+1, unit]).unsqueeze(0))).data.cpu().numpy())
         mask = up > threshold
         return mask
 
     # Makes an iamge using the mask
-    def activation_visualization(self, layer, unit, index, alpha=0.2):
+    def activation_visualization(self, layer, unit, index, alpha=0.2, normalize=False, use_fieldmap=True):
         image = imread(self.ds.filename(index))
-        mask = self.activation_mask(layer, unit, index, shape=image.shape[:2])
+        mask = self.activation_mask(layer, unit, index, shape=image.shape[:2], use_fieldmap=use_fieldmap)
+        if normalize:
+            image = image / 255.
         return (mask[:, :, numpy.newaxis] * (1 - alpha) + alpha) * image
 
     def summarize_tally(self, layer):
@@ -414,6 +425,10 @@ if __name__ == '__main__':
                 '--imcount',
                 type=int, default=16,
                 help='number of thumbnails to include')
+        parser.add_argument(
+                '--usefieldmap',
+                action='store_true',
+                default=False)
         args = parser.parse_args()
         np = NetworkProbe(args.directory, blobs=args.blobs)
         for blob in args.blobs:
@@ -426,7 +441,7 @@ if __name__ == '__main__':
                 np.generate_html_summary(blob,
                         imsize=args.imsize, imscale=args.imscale,
                         imcount=args.imcount, tally_stats=tally_stats,
-                        gridwidth=args.gridwidth,
+                        gridwidth=args.gridwidth, use_fieldmap=args.usefieldmap,
                         verbose=True)
             if 'csv' in formats:
                 filename = os.path.join(args.directory,
