@@ -155,13 +155,15 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
                                 l1_weight_decay=0, l2_weight_decay=0, nesterov=False,
                                 lower_bound=None, optimizer_type='sgd', cuda=False,
                                 fig_path=None, show_fig=True):
-    if 'imagenet' in directory or 'ILSVRC' in directory:
+    ed = expdir.ExperimentDirectory(directory)
+    try:
+        info = ed.load_info()
+    except:
         ed = expdir.ExperimentDirectory(os.path.join(directory, 'train'))
         ed_val = expdir.ExperimentDirectory(os.path.join(directory, 'val'))
-    else:
-        # Make sure we have a directory to work in
-        # qcode = ('%f' % quantile).replace('0.','').rstrip('0')
-        ed = expdir.ExperimentDirectory(directory)
+        info = ed.load_info()
+        assert('imagenet' in info.dataset or 'ILSVRC' in info.dataset)
+
     # Check if linear weights have already been learned
     if ed.has_mmap(blob=blob, part='label_i_%d_weights_disc%s' % (label_i, suffix)):
         print('%s already has %s, so skipping.' % (directory,
@@ -208,15 +210,14 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
             label_i, label_name, len(label_idx), len(non_label_idx)))
         val_blobdata = blobdata
     elif 'imagenet' in info.dataset or 'ILSVRC' in info.dataset:
-        # TODO: don't hardcode
-        label_desc = np.loadtxt('/users/ruthfong/packages/caffe/data/ilsvrc12/synset_words.txt', str, delimiter='\t')
+        label_desc = np.loadtxt('synset_words.txt', str, delimiter='\t')
         label_name = ' '.join(label_desc[label_i].split(',')[0].split()[1:])
         image_to_label_train = load_image_to_label(os.path.join(directory, 'train'), blob=blob)
         train_label_idx = np.where(image_to_label_train[:, label_i])[0]
-        train_non_label_idx = np.where(image_to_label_train[:, label_i])[0]
+        train_non_label_idx = np.where(1-image_to_label_train[:, label_i])[0]
         image_to_label_val = load_image_to_label(os.path.join(directory, 'val'), blob=blob)
         val_label_idx = np.where(image_to_label_val[:, label_i])[0]
-        val_non_label_idx = np.where(image_to_label_val[:, label_i])[0]
+        val_non_label_idx = np.where(1-image_to_label_val[:, label_i])[0]
         print('Number of positive and negative examples of label %d (%s): %d %d %d %d' %
               (label_i, label_name, len(train_label_idx), len(train_non_label_idx),
                len(val_label_idx), len(val_non_label_idx)))
@@ -293,9 +294,7 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
     train_accs = []
     val_losses = []
     val_accs = []
-    for t in range(num_epochs):
-        if epoch_iter is not None:
-            adjust_learning_rate(lr, optimizer, t, epoch_iter=epoch_iter)
+    if 'imagenet' in info.dataset or 'ILSVRC' in info.dataset:
         if train_neg_greater:
             pos_train_idx = np.arange(num_train_labels)
             neg_train_idx = np.random.choice(num_train_non_labels, num_train_labels, replace=False)
@@ -306,6 +305,20 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
         train_indexes = np.concatenate((train_label_idx[pos_train_idx], train_non_label_idx[neg_train_idx]))
         train_targets = np.concatenate((np.ones(len(pos_train_idx)), np.zeros(len(neg_train_idx))))
         rand_idx = np.random.permutation(len(train_targets))
+    for t in range(num_epochs):
+        if epoch_iter is not None:
+            adjust_learning_rate(lr, optimizer, t, epoch_iter=epoch_iter)
+        if 'broden' in info.dataset:
+            if train_neg_greater:
+                pos_train_idx = np.arange(num_train_labels)
+                neg_train_idx = np.random.choice(num_train_non_labels, num_train_labels, replace=False)
+            else:
+                pos_train_idx = np.random.choice(num_train_labels, num_train_non_labels, replace=False)
+                neg_train_idx = np.arange(num_train_non_labels)
+
+            train_indexes = np.concatenate((train_label_idx[pos_train_idx], train_non_label_idx[neg_train_idx]))
+            train_targets = np.concatenate((np.ones(len(pos_train_idx)), np.zeros(len(neg_train_idx))))
+            rand_idx = np.random.permutation(len(train_targets))
 
         (train_loss, train_acc) = run_epoch(blobdata, train_targets[rand_idx], train_indexes[rand_idx], thresh, layer, criterion,
                       optimizer, t, batch_size=batch_size, train=True, cuda=cuda)
@@ -488,13 +501,8 @@ if __name__ == '__main__':
             for label_i in labels:
 
                 if args.num_filters is not None:
-                    if len(args.num_filters) > 1:
-                        suffix = ['%s_num_filters_%d' % (args.suffix, n) for n in args.num_filters]
-                        num_filters = args.num_filters
-
-                    else:
-                        num_filters = args.num_filters
-                        suffix = [args.suffix]
+                    suffix = ['%s_num_filters_%d' % (args.suffix, n) for n in args.num_filters]
+                    num_filters = args.num_filters
                 else:
                     num_filters = [None]
                     suffix = [args.suffix]
