@@ -27,7 +27,7 @@ def iou_union_d(input, target, threshold = 0.5):
 def get_seg_size(input_dim):
     if input_dim == [227, 227]:
         seg_size = (113, 113)
-    elif input_dim == [224, 224]:
+    elif input_dim == [224, 224] or (input_dim[0] == 224 and input_dim[1] == 224):
         seg_size = (112, 112)
     elif input_dim == [384, 384]:
         seg_size = (192, 192)
@@ -38,13 +38,13 @@ def get_seg_size(input_dim):
 
 
 def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=None,
-        end=None,cuda=False):
+        end=None, suffix='', cuda=False):
     # Make sure we have a directory to work in
     qcode = ('%f' % quantile).replace('0.','').rstrip('0')
     ed = expdir.ExperimentDirectory(directory)
     # Check if label probe has already been created
-    if (ed.has_mmap(blob=blob, part='single_set_ious') and 
-            ed.has_mmap(blob=blob, part='single_ind_ious')):
+    if (ed.has_mmap(blob=blob, part='single_set_ious%s' % suffix) and 
+            ed.has_mmap(blob=blob, part='single_ind_ious%s' % suffix)):
         print('label_probe_pytorch.py has already been run.')
         return
     # Load probe metadata
@@ -59,11 +59,12 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
     quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(unit_size, -1))
     threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
     thresh = threshold[:, np.newaxis, np.newaxis]
-    # Map the blob activation data for reading
-    fn_read = ed.mmap_filename(blob=blob)
     # Load the dataset
     ds = loadseg.SegmentationData(info.dataset)
-    blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
+    # Map the blob activation data for reading
+    #fn_read = ed.mmap_filename(blob=blob)
+    #blobdata = cached_memmap(fn_read, mode='r', dtype='float32', shape=shape)
+    blobdata = ed.open_mmap(blob=blob, mode='r', shape=shape)
     # Get image-to-labels mapping
     if not has_image_to_label(directory):
         print('image_to_label does not exist in %s; creating it now...' % directory)
@@ -73,13 +74,13 @@ def label_probe(directory, blob, quantile=0.005, batch_size=16, ahead=4, start=N
     num_labels = ds.label_size()
     upsample = nn.Upsample(size=seg_size, mode='bilinear')
 
-    set_ious_train_mmap = ed.open_mmap(blob=blob, part='single_set_train_ious', 
+    set_ious_train_mmap = ed.open_mmap(blob=blob, part='single_set_train_ious%s' % suffix, 
             mode='w+', dtype='float32', shape=(num_labels, unit_size))
-    set_ious_val_mmap = ed.open_mmap(blob=blob, part='single_set_val_ious',
+    set_ious_val_mmap = ed.open_mmap(blob=blob, part='single_set_val_ious%s' % suffix,
             mode='w+', dtype='float32', shape=(num_labels, unit_size))
-    set_ious_mmap = ed.open_mmap(blob=blob, part='single_set_ious', mode='w+',
+    set_ious_mmap = ed.open_mmap(blob=blob, part='single_set_ious%s' % suffix, mode='w+',
         dtype='float32', shape=(num_labels, unit_size))
-    ind_ious_mmap = ed.open_mmap(blob=blob, part='single_ind_ious', mode='w+',
+    ind_ious_mmap = ed.open_mmap(blob=blob, part='single_ind_ious%s' % suffix, mode='w+',
         dtype='float32', shape=(num_labels, tot_imgs, unit_size))
     
     if start is None:
@@ -183,6 +184,7 @@ if __name__ == '__main__':
                 help='the batch size to use')
         parser.add_argument('--gpu', type=int, default=None,
                 help='use GPU for training')
+        parser.add_argument('--suffix', type=str, default='')
         parser.add_argument('--start', type=int, default=1)
         parser.add_argument('--end', type=int, default=1198)
 
@@ -201,7 +203,7 @@ if __name__ == '__main__':
         for blob in args.blobs:
             label_probe(args.directory, blob, quantile=args.quantile, 
                     batch_size=args.batch_size, start=args.start, 
-                    end=args.end, cuda=cuda)
+                    end=args.end, suffix=args.suffix, cuda=cuda)
     except:
         traceback.print_exc(file=sys.stdout)
         sys.exit(1)
