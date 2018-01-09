@@ -85,10 +85,12 @@ if __name__ == '__main__':
             help='output directory for the net probe')
         parser.add_argument(
             '--batch_size',
+            type=int,
             default=64,
             help='batch size')
         parser.add_argument(
             '--ahead',
+            type=int,
             default=16,
             help='TODO')
         args = parser.parse_args()
