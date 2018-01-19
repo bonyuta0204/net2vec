@@ -1,7 +1,14 @@
-# Network Dissection
+# Net2Vec
 
 ## Introduction
-This repository contains the demo code for the [CVPR'17 paper](http://netdissect.csail.mit.edu/final-network-dissection.pdf) Network Dissection: Quantifying Interpretability of Deep Visual Representations. You can use this code with naive [Caffe](https://github.com/BVLC/caffe), with matcaffe and pycaffe compiled. We also provide a [PyTorch wrapper](script/rundissect_pytorch.sh) to apply NetDissect to probe networks in PyTorch format. There are dissection results for several networks at the [project page](http://netdissect.csail.mit.edu/).
+This repository contains the code for our [arxiv'18 paper](https://arxiv.org/abs/1801.03454) Net2Vec: Quantifying and Explaining how Concepts are Encoded by Filters in Deep Neural Networks. It is [forked code-wise](https://github.com/CSAILVision/NetDissect) and builds on the work from [Bau et al's CVPR'17 paper](http://netdissect.csail.mit.edu/final-network-dissection.pdf) Network Dissection:
+Quantifying Interpretability of Deep Visual Representations.
+
+Pardon the current appearance of the repo: this code is still being developed and will be cleaned up (with more user-friendly README instructions) shortly.
+
+# README from NetDissect
+
+You can use this code with naive [Caffe](https://github.com/BVLC/caffe), with matcaffe and pycaffe compiled. We also provide a [PyTorch wrapper](script/rundissect_pytorch.sh) to apply NetDissect to probe networks in PyTorch format. There are dissection results for several networks at the [project page](http://netdissect.csail.mit.edu/).
 
 This code includes
 
@@ -77,7 +84,16 @@ After the csv file containing the raw data of the unit semantics is generated, y
 
 
 ## Reference 
-If you find the codes useful, please cite this paper
+If you find the code useful, please cite the following papers
+```
+@article{fong2018,
+  title={Net2Vec: Quantifying and Explaining how Concepts are Encoded by Filters in Deep Neural Networks},
+  author={Fong, Ruth and Vedaldi, Andrea},
+  journal={arXiv preprint arXiv:1801.03454},
+  year={2018}
+}
+```
+
 ```
 @inproceedings{net
 
