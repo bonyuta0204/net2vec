@@ -5,6 +5,16 @@ set -e
 cd "$(dirname "$(dirname "$(readlink -f "$0")")")"
 
 declare -a MODELS=(
+  "weakly_objectcentric"
+  "weakly_videotracking"
+  "weakly_audio"
+  "weakly_colorization"
+  "weakly_deepcontext"
+  "weakly_splitbrain"
+  "weakly_egomotion"
+  "weakly_videoorder"
+  "weakly_learningbymoving"
+  "weakly_solvingpuzzle"
   "caffe_reference_imagenet"      # alexnet-imagenet
   #"caffe_reference_places205"     # alexnet-places205
   "caffe_reference_places365"     # alexnet-places365
@@ -16,8 +26,8 @@ declare -a MODELS=(
   "googlenet_places365"           # googlenet-places365
   "resnet-152-torch-imagenet"     # resnet-imagenet
   "resnet-152-torch-places365"    # resnet-places365
-  "densenet161_imagenet"
-  "densenet161_places365"
+  #"densenet161_imagenet"
+  #"densenet161_places365"
 )
 
 for MODEL in "${MODELS[@]}"
