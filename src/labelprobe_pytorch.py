@@ -25,11 +25,11 @@ def iou_union_d(input, target, threshold = 0.5):
 
 
 def get_seg_size(input_dim):
-    if input_dim == [227, 227]:
+    if input_dim == [227, 227] or (input_dim[0] == 227 and input_dim[1] == 227):
         seg_size = (113, 113)
     elif input_dim == [224, 224] or (input_dim[0] == 224 and input_dim[1] == 224):
         seg_size = (112, 112)
-    elif input_dim == [384, 384]:
+    elif input_dim == [384, 384] or (input_dim[0] == 384 and input_dim[1] == 384):
         seg_size = (192, 192)
     else:
         print input_dim
