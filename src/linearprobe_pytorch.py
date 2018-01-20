@@ -186,6 +186,7 @@ def run_epoch(activations, act_idx, label_categories, label_i, fieldmap, thresh,
 def linear_probe(directory, blob, label_i, suffix='', init_suffix='', num_filters=None, batch_size=16, ahead=4, 
         quantile=0.005, bias=False, positive=False, num_epochs=30, lr=1e-4, momentum=0.9, 
         l1_weight_decay=0, l2_weight_decay=0, validation=False, nesterov=False, lower_bound=None,
+        min_train=None, max_train=None, max_val=None,
         cuda=False):
     # Make sure we have a directory to work in
     #qcode = ('%f' % quantile).replace('0.','').rstrip('0')
@@ -229,21 +230,28 @@ def linear_probe(directory, blob, label_i, suffix='', init_suffix='', num_filter
         create_image_to_label(directory, batch_size=batch_size, ahead=ahead)
     image_to_label = load_image_to_label(directory)
     label_idx = np.where(image_to_label[:, label_i])[0]
+    train_idx = np.array([i for i in label_idx if ds.split(i) == 'train'])
+    val_idx = np.array([i for i in label_idx if ds.split(i) == 'val'])
+    if min_train is not None and len(train_idx) < min_train:
+        print('Number of training examples for label %d (%s) is %d, which is less than the minimum of %d so skipping.' 
+                % (label_i, label_name, len(train_idx), min_train))
+    if max_train is not None and len(train_idx) > max_train:
+        train_idx = train_idx[:max_train]
+    if max_val is not None and len(val_idx) > max_val:
+        val_idx = val_idx[:max_val]
+
     print('Total number of images containing label %d (%s): %d' % (
         label_i, label_name, len(label_idx)))
     
     try:
         train_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
-                                                      split='val' if validation else 'train',
-                                                      indexes=label_idx, once=False,
+                                                      indexes=train_idx, once=False,
                                                       batch_size=batch_size,
                                                       ahead=ahead, thread=True)
     except IndexError as err:
         print(err.args)
         return
     
-    train_idx = np.array(train_loader.indexes)
-
     sw = 0
     sh = 0
     perc_label = []
@@ -312,14 +320,12 @@ def linear_probe(directory, blob, label_i, suffix='', init_suffix='', num_filter
     if not validation:
         try:
             val_loader = loadseg.SegmentationPrefetcher(ds, categories=label_categories,
-                    split='val', indexes=label_idx, once=False, batch_size=batch_size,
+                    indexes=val_idx, once=False, batch_size=batch_size,
                     ahead=ahead, thread=True)
         except IndexError as err:
             print(err.args)
             train_loader.close()
             return
-
-        val_idx = np.array(val_loader.indexes)
 
         val_label_categories = []
         for batch in val_loader.batches():
@@ -466,6 +472,21 @@ if __name__ == '__main__':
                 type=str,
                 default='',
                 help='TODO')
+        parser.add_argument(
+                '--min_train',
+                type=int,
+                default=None,
+                help='TODO')
+        parser.add_argument(
+                '--max_train',
+                type=int,
+                default=None,
+                help='TODO')
+        parser.add_argument(
+                '--max_val',
+                type=int,
+                default=None,
+                help='TODO')
 
         args = parser.parse_args()
         if args.labels is not None:
@@ -501,6 +522,8 @@ if __name__ == '__main__':
                             lower_bound=args.lower_bound, num_epochs=args.num_epochs, 
                             lr=args.learning_rate, l1_weight_decay=args.l1_decay,
                             l2_weight_decay=args.l2_decay,validation=args.validation,
+                            min_train=args.min_train, max_train=args.max_train,
+                            max_val=args.max_val,
                             cuda=cuda)
     except:
         traceback.print_exc(file=sys.stdout)
