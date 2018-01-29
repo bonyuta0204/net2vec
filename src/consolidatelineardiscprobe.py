@@ -35,6 +35,7 @@ def consolidate_disc_probe(directory, blob, bias=False, num_filters=None, suffix
     if (ed.has_mmap(blob=blob, part='linear_weights_disc%s' % suffix)
         and (not bias or ed.has_mmap(blob=blob, part='linear_bias_disc%s' % suffix))):
         print('Linear weights (and bias) have already been consolidated')
+        print ed.mmap_filename(blob=blob, part='linear_weights_disc%s' % suffix)
     else:
         weights_mmap = ed.open_mmap(blob=blob, part='linear_weights_disc%s' % suffix, mode='w+',
                 dtype='float32', shape=(L,F,K))

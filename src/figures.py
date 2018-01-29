@@ -38,18 +38,21 @@ def get_single_acts(acts, thresh, filter_i, up_size=(224,224), thresh_first=True
         return (upsample(Variable(torch.Tensor(acts))).data.cpu().numpy()[0] > thresh).astype(float)[filter_i]
 
 
-def get_weighted_acts(acts, thresh, label_weights, label_bias=None,up_size=(224,224), act=True, 
+def get_weighted_acts(acts, label_weights, thresh=None, label_bias=None,up_size=(224,224), act=True, 
                       positive=False, bias=False, thresh_first=True):
     layer = CustomLayer(len(label_weights), upsample=thresh_first, up_size=up_size, act=act, positive=positive, bias=bias)
     layer.weight.data[...] = torch.Tensor(label_weights)
     if bias:
         assert(label_bias is not None)
         layer.bias.data[...] = torch.Tensor(label_bias)
-    if thresh_first:
-        return layer(Variable(torch.Tensor((acts > thresh).astype(float)))).data.cpu().numpy()
+    upsample = nn.Upsample(size=up_size, mode='bilinear')
+    if thresh is None:
+        return layer(upsample(Variable(torch.Tensor(acts)))).data.cpu().numpy()
     else:
-        upsample = nn.Upsample(size=up_size, mode='bilinear')
-        return layer((upsample(Variable(torch.Tensor(acts))) > Variable(torch.Tensor(thresh))).type(torch.FloatTensor)).data.cpu().numpy()
+        if thresh_first:
+            return layer(Variable(torch.Tensor((acts > thresh).astype(float)))).data.cpu().numpy()
+        else:
+            return layer((upsample(Variable(torch.Tensor(acts))) > Variable(torch.Tensor(thresh))).type(torch.FloatTensor)).data.cpu().numpy()
 
 
 def show_examples_for_unit(ds, blobdata, thresh, blob, unit_i, examples_idx, up_size=(224,224), num_to_show=8, mask_alpha=0.2, thresh_first=False):
@@ -71,8 +74,8 @@ def show_examples_for_unit(ds, blobdata, thresh, blob, unit_i, examples_idx, up_
     plt.show()
 
 
-def show_examples_for_linear(ds, blobdata, thresh, blob, label_weights, examples_idx, up_size=(224,224), num_to_show=8, mask_alpha=0.2, 
-                             thresh_first=False):
+def show_examples_for_linear(ds, blobdata, label_weights, examples_idx, thresh=None, up_size=(224,224), num_to_show=8, mask_alpha=0.2, 
+                             thresh_first=False, soft_mask=False):
     f, ax = plt.subplots(1,num_to_show,figsize=(4*num_to_show,4))
     for i in range(num_to_show):
         ax[i].set_xticks([])
@@ -81,11 +84,20 @@ def show_examples_for_linear(ds, blobdata, thresh, blob, label_weights, examples
             pass
             #ax[i].set_ylabel('unit %d' % unit_i)
         #try:
-        up = get_weighted_acts(np.expand_dims(blobdata[blob][examples_idx[i]], axis=0), thresh[blob], label_weights, label_bias=None,
-                          up_size=up_size, act=True, positive=False, bias=False, thresh_first=thresh_first)
+        if thresh is None:
+            up = get_weighted_acts(np.expand_dims(blobdata[examples_idx[i]], axis=0), label_weights, thresh=thresh, label_bias=None,
+                              up_size=up_size, act=True, positive=False, bias=False, thresh_first=thresh_first)
+        else:
+            up = get_weighted_acts(np.expand_dims(blobdata[examples_idx[i]], axis=0), label_weights, thresh=thresh, label_bias=None,
+                              up_size=up_size, act=True, positive=False, bias=False, thresh_first=thresh_first)
         #except:
         #    break
-        ax[i].imshow((np.expand_dims((up > 0.5), axis=2) * (1-mask_alpha) + mask_alpha) * imread(ds.filename(examples_idx[i]))/255.)
+        if soft_mask:
+            ax[i].imshow(imread(ds.filename(examples_idx[i]))/255.)
+            ax[i].imshow(up, cmap='jet', alpha=mask_alpha)
+            #ax[i].imshow((np.expand_dims(up, axis=2) * (1-mask_alpha) + mask_alpha) * imread(ds.filename(examples_idx[i]))/255.)
+        else:
+            ax[i].imshow((np.expand_dims((up > 0.5), axis=2) * (1-mask_alpha) + mask_alpha) * imread(ds.filename(examples_idx[i]))/255.)
 
     f.subplots_adjust(wspace=0.0,hspace=0.0)
     plt.show()

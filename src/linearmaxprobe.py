@@ -11,7 +11,7 @@ import pickle as pkl
 import loadseg
 
 def max_probe(directory, blob, batch_size=None, quantile=0.005, results=None, num_components=None,
-        suffix='', new_suffix='', normalize=True, pool='max_pool', should_thresh=False, disc=False):
+        use_y_weights=False, suffix='', new_suffix='', normalize=True, pool='max_pool', should_thresh=False, disc=False):
     # Make sure we have a directory to work in
     ed = expdir.ExperimentDirectory(directory)
 
@@ -31,7 +31,7 @@ def max_probe(directory, blob, batch_size=None, quantile=0.005, results=None, nu
     shape = blob_info.shape
     N = shape[0]
     K = shape[1]
-    L  ds.label_size()
+    L = ds.label_size()
 
     if should_thresh:
         if quantile == 1:
@@ -41,12 +41,19 @@ def max_probe(directory, blob, batch_size=None, quantile=0.005, results=None, nu
             threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
             thresh = threshold[numpy.newaxis,numpy.newaxis,:,numpy.newaxis,numpy.newaxis]
     
+    if use_y_weights:
+        shape=(N,L,113,113) # TODO: don't hardcode segmentation size, this only works for alexnet
+        data = ed.open_mmap(part='concept_data', mode='r', shape=shape) 
+    else:
+        data = ed.open_mmap(blob=blob, shape=shape)
     print 'Computing imgmax for %s shape %r' % (blob, shape)
-    data = ed.open_mmap(blob=blob, shape=shape)
     if results is not None:
         imgmax = ed.open_mmap(blob=blob, part='linear_imgmax%s%s' % (suffix, new_suffix),
                 mode='w+', shape=(N,num_components))
-        all_weights = pkl.load(open(results, 'rb'))['model'].x_weights_.T
+        if use_y_weights:
+            all_weights = pkl.load(open(results, 'rb'))['model'].y_weights_.T
+        else:
+            all_weights = pkl.load(open(results, 'rb'))['model'].x_weights_.T
     else:
         imgmax = ed.open_mmap(blob=blob, part='linear_imgmax%s%s' % (suffix, new_suffix),
                 mode='w+', shape=(N,L))
@@ -127,6 +134,10 @@ if __name__ == '__main__':
                 type=int,
                 default=None)
         parser.add_argument(
+                '--use_y_weights',
+                action='store_true',
+                default=False)
+        parser.add_argument(
                 '--disc',
                 action='store_true',
                 default=False)
@@ -155,7 +166,7 @@ if __name__ == '__main__':
         for blob in args.blobs:
             max_probe(args.directory, blob, args.batch_size, suffix=args.suffix,
                     normalize=args.normalize, results=args.results, num_components=args.num_components,
-                    disc=args.disc, quantile=args.quantile,
+                    use_y_weights=args.use_y_weights, disc=args.disc, quantile=args.quantile,
                     should_thresh=args.thresh, new_suffix=args.new_suffix, 
                     pool=args.pool)
     except:

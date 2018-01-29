@@ -52,7 +52,10 @@ def quant_probe(directory, blob, quantiles=None, batch_size=None):
         print 'Processing %s index %d: %f %f' % (blob, i, rate, batch_rate)
         sys.stdout.flush()
         batch = data[i:i+batch_size]
-        batch = numpy.transpose(batch,axes=(0,2,3,1)).reshape(-1, data.shape[1])
+        if len(batch.shape) == 4:
+            batch = numpy.transpose(batch,axes=(0,2,3,1)).reshape(-1, data.shape[1])
+        elif len(batch.shape) != 2:
+            assert(False)
         quant.add(batch)
     print 'Writing quantiles'
     sys.stdout.flush()

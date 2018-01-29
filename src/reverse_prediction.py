@@ -15,13 +15,12 @@ import os
 
 
 def iou_intersect(input, target, target_thresh, threshold=0.5):
-    return torch.sum(torch.sum(torch.mul((input > threshold).float(),
-                                         (target > target_thresh).float()), dim=-1),
+    return torch.sum(torch.sum(torch.mul((input > threshold).float(), target), dim=-1),
                      dim=-1)
 
 
-def iou_union(input, target, target_thresh, threshold=0.5):
-    return torch.sum(torch.sum(torch.clamp(torch.add((target > target_thresh).float(),
+def iou_union(input, target, threshold=0.5):
+    return torch.sum(torch.sum(torch.clamp(torch.add(target,
                                                      (input > threshold).float()),
                                            max=1.), dim=-1), dim=-1)
 
@@ -53,6 +52,8 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
     losses = AverageMeter()
     iou_intersects = np.zeros(N)
     iou_unions = np.zeros(N)
+    num_conc = np.zeros(N)
+    num_filt_acts = np.zeros(N)
 
     #no_quantile = not np.any(thresh)
     target_thresh = float(thresh)
@@ -84,10 +85,13 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
         output_var = model(input_var)
         loss = criterion(output_var, target_var)
         losses.update(loss.data[0], input.size(0))
-        iou_intersects[idx] = iou_intersect(output_var, target_var, target_thresh, iou_threshold
+        iou_intersects[idx] = iou_intersect(output_var, target_var, iou_threshold
                                             ).data.cpu().numpy()
-        iou_unions[idx] = iou_union(output_var, target_var, target_thresh, iou_threshold
+        iou_unions[idx] = iou_union(output_var, target_var, iou_threshold
                                     ).data.cpu().numpy()
+        num_conc[idx] = (output_var > 0.5).float().sum(dim=-1).sum(dim=-1).data.cpu().numpy()
+        num_filt_acts[idx] = target_var.sum(dim=-1).sum(dim=-1).data.cpu().numpy()
+
         if train:
             optimizer.zero_grad()
             loss.backward()
@@ -95,19 +99,27 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
 
         set_iou = np.true_divide(np.sum(iou_intersects[:idx[-1]]), np.sum(iou_unions[:idx[-1]]))
         ind_ious = np.true_divide(iou_intersects, iou_unions)
+        concept_given_filter = np.true_divide(np.sum(iou_intersects[:idx[-1]]), np.sum(num_filt_acts[:idx[-1]]))
+        filter_given_concept = np.true_divide(np.sum(iou_intersects[:idx[-1]]), np.sum(num_conc[:idx[-1]]))
 
         if train:
             print('Epoch {}[{}/{}]\t'
                   'Avg Loss {losses.avg:.4f} \t'
                   'Set IoU {}\t'
-                  'Time {}\t'.format(epoch, batch_i+1, num_batches, set_iou, time.time()-start, losses=losses))
+                  'P(C|F_k) {}\t'
+                  'P(F_k|C) {}\t'
+                  'Time {}\t'.format(epoch, batch_i+1, num_batches, set_iou, concept_given_filter, 
+                      filter_given_concept, time.time()-start, losses=losses))
         else:
             print('Test [{}/{}]\t'
                   'Avg Loss {losses.avg:.4f} \t'
                   'Set IoU {}\t'
-                  'Time {}\t'.format(batch_i+1, num_batches, set_iou, time.time()-start, losses=losses))
+                  'p(C|F_k) = {}\t'
+                  'p(F_k|C) = {}\t'
+                  'Time {}\t'.format(batch_i+1, num_batches, set_iou, concept_given_filter, 
+                      filter_given_concept, time.time()-start, losses=losses))
 
-    return (losses.avg, set_iou, ind_ious)
+    return (losses.avg, set_iou, ind_ious, concept_given_filter, filter_given_concept)
 
 
 def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None, batch_size=64, quantile=0.005,
@@ -143,11 +155,20 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
 
     # calculate mean non-negative filter activation
     perc_label = []
+    thresh_idx = []
     for i in train_idx:
-        perc_label.append(np.sum((blobdata[i,filter_i] > thresh).astype(float)) / float(np.prod(shape[2:])))
-    alpha = float(1. - np.mean(perc_label))
+        num_thresh = np.sum((blobdata[i,filter_i] > thresh).astype(float))
+        perc_label.append(num_thresh / float(np.prod(shape[2:])))
+        if num_thresh > 0:
+            thresh_idx.append(i)
+            #perc_label.append(num_nz / float(np.prod(shape[2:])))
+    perc_label = np.array(perc_label)
+    alpha_unnorm = float(1. - np.mean(perc_label))
+    alpha = float(1. - np.mean(perc_label[thresh_idx]))
+    train_idx = train_idx[thresh_idx]
 
-    print('Alpha for filter %d: %f' % (filter_i, alpha))
+    print('Alpha for filter %d: %f (%f unnorm)' % (filter_i, alpha, alpha_unnorm))
+    print('# above thresh train examples for filter %d: %d' % (filter_i, len(thresh_idx)))
 
     layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias, cuda=cuda)
 
@@ -169,14 +190,14 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
     optimizer = Custom_SGD(layer.parameters(), lr, momentum, l1_weight_decay=l1_weight_decay,
                            l2_weight_decay=l2_weight_decay, nesterov=nesterov, lower_bound=lower_bound)
 
-    results = np.zeros((4,num_epochs))
+    results = np.zeros((8,num_epochs))
 
     for t in range(num_epochs):
-        (trn_loss, trn_set_iou, trn_ind_ious) = run_epoch(blobdata, conceptdata, train_idx,
+        (trn_loss, trn_set_iou, trn_ind_ious, trn_c_given_f, trn_f_given_c) = run_epoch(blobdata, conceptdata, train_idx,
                                                           filter_i, thresh, layer, batch_size, criterion,
                                                           optimizer, t+1, train=True, cuda=cuda,
                                                           iou_threshold=0)
-        (val_loss, val_set_iou, val_ind_ious) = run_epoch(blobdata, conceptdata, val_idx,
+        (val_loss, val_set_iou, val_ind_ious, val_c_given_f, val_f_given_c) = run_epoch(blobdata, conceptdata, val_idx,
                                                           filter_i, thresh, layer, batch_size, criterion,
                                                           optimizer, t+1, train=False, cuda=cuda,
                                                           iou_threshold=0)
@@ -184,6 +205,10 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
         results[1][t] = val_loss
         results[2][t] = trn_set_iou
         results[3][t] = val_set_iou
+        results[4][t] = trn_c_given_f
+        results[5][t] = val_c_given_f
+        results[6][t] = trn_f_given_c
+        results[7][t] = val_f_given_c
 
     ind_ious = np.zeros(N)
     ind_ious[train_idx] = trn_ind_ious

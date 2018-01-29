@@ -66,6 +66,7 @@ def compute_correlation(directory, blob, num_samples=None, num_components=1, out
                 num_samples, time.time() - start)
 
     X_c, Y_c = cca.transform(X,Y)
+    score = cca.score(X,Y)
 
     results = {}
     if out_file is not None:
@@ -81,6 +82,7 @@ def compute_correlation(directory, blob, num_samples=None, num_components=1, out
         results['blob'] = blob
         results['num_samples'] = num_samples
         results['num_components'] = num_components
+        results['score'] = score
 
         pkl.dump(results, open(out_file, 'wb'))
         if verbose:

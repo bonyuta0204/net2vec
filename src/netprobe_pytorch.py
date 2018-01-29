@@ -130,12 +130,15 @@ def create_probe(
         rot = {}
     for idx, blob in enumerate(blobs):
         #shape = (data_size, ) + net.blobs[blob].data.shape[1:]
-        shape = (data_size, int(size_blobs_output[idx][1]), int(size_blobs_output[idx][2]),int(size_blobs_output[idx][3]))
+        if len(size_blobs_output[idx]) == 4:
+            shape = (data_size, int(size_blobs_output[idx][1]), int(size_blobs_output[idx][2]),int(size_blobs_output[idx][3]))
+            # Rather than use the exact RF, here we use some heuristics to compute the approximate RF
+            size_RF = (args.input_size/size_blobs_output[idx][2], args.input_size/size_blobs_output[idx][3])
+            fieldmap = ((0, 0), size_RF, size_RF)
+        if len(size_blobs_output[idx]) == 2:
+            shape = (data_size, int(size_blobs_output[idx][1]))
+            fieldmap = None
         out[blob] = ed.open_mmap(blob=blob, mode='w+', shape=shape)
-
-        # Rather than use the exact RF, here we use some heuristics to compute the approximate RF
-        size_RF = (args.input_size/size_blobs_output[idx][2], args.input_size/size_blobs_output[idx][3])
-        fieldmap = ((0, 0), size_RF, size_RF)
 
         ed.save_info(blob=blob, data=dict(
             name=blob, shape=shape, fieldmap=fieldmap))

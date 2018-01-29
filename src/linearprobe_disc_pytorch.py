@@ -60,11 +60,16 @@ class CustomDiscLayer(nn.Module):
             self.bias.data.uniform_(0,1)
 
     def forward(self, x):
-        y = x * (self.mask * self.weight).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
-        if self.pool is 'max_pool':
-            y = torch.max(torch.max(y, dim=3)[0], dim=2)[0]
-        elif self.pool is 'avg_pool':
-            y = torch.mean(torch.mean(y, dim=3), dim=2)
+        if len(x.shape) == 4:
+            y = x * (self.mask * self.weight).unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(x)
+            if self.pool is 'max_pool':
+                y = torch.max(torch.max(y, dim=3)[0], dim=2)[0]
+            elif self.pool is 'avg_pool':
+                y = torch.mean(torch.mean(y, dim=3), dim=2)
+        elif len(x.shape) == 2:
+            y = x * (self.mask * self.weight).unsqueeze(0)
+        else:
+            assert(False)
         if self.act:
             return self.activation((y.sum(1) + self.bias).squeeze())
         return (y.sum(1) + self.bias).squeeze()
@@ -180,11 +185,21 @@ def linear_probe_discriminative(directory, blob, label_i, suffix='', batch_size=
     fieldmap = blob_info.fieldmap
     # Load the blob quantile data and grab thresholds
     if quantile == 1:
-        thresh = np.zeros((unit_size, 1, 1))
+        if len(shape) == 4:
+            thresh = np.zeros((unit_size, 1, 1))
+        elif len(shape) == 2:
+            thresh = np.zeros(unit_size)
+        else:
+            assert(False)
     else:
         quantdata = ed.open_mmap(blob=blob, part='quant-*', shape=(unit_size, -1))
         threshold = quantdata[:, int(round(quantdata.shape[1] * quantile))]
-        thresh = threshold[:, np.newaxis, np.newaxis]
+        if len(shape) == 4:
+            thresh = threshold[:, np.newaxis, np.newaxis]
+        elif len(shape) == 2:
+            thresh = threshold
+        else:
+            assert(False)
     # print np.max(thresh), thresh.shape, type(thresh)
     # Map the blob activation data for reading
 
