@@ -4,6 +4,10 @@ from upsample_blob_data import get_seg_size
 from linearprobe_pytorch import AverageMeter, CustomLayer
 from customoptimizer_pytorch import Custom_SGD
 
+from sklearn import svm
+#import pickle as pkl
+from sklearn.externals import joblib
+
 import time
 import numpy as np
 
@@ -123,7 +127,7 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
 
 
 def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None, batch_size=64, quantile=0.005,
-                         bias=False, positive=False, num_epochs=30, lr=1e-4, momentum=0.9,
+                         bias=False, positive=False, svm=True, num_epochs=30, lr=1e-4, momentum=0.9,
                          l1_weight_decay=0, l2_weight_decay=0, validation=False, nesterov=False,
                          lower_bound=None, cuda=False):
     ed = expdir.ExperimentDirectory(directory)
@@ -170,73 +174,86 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
     print('Alpha for filter %d: %f (%f unnorm)' % (filter_i, alpha, alpha_unnorm))
     print('# above thresh train examples for filter %d: %d' % (filter_i, len(thresh_idx)))
 
-    layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias, cuda=cuda)
+    if svm:
+        train_subset_idx = range(1000)
+        val_subset_idx = range(1000, 2000)
+        X_train = np.mean(np.mean(conceptdata[train_idx[train_subset_idx], :, 52:62, 52:62], axis=-1), axis=-1)
+        Y_train = (blobdata[train_idx[train_subset_idx], filter_i, 5, 5] > thresh).astype(float)
+        X_val = np.mean(np.mean(conceptdata[train_idx[val_subset_idx], :, 52:62, 52:62], axis=-1), axis=-1)
+        Y_val = (blobdata[train_idx[val_subset_idx], filter_i, 5, 5] > thresh).astype(float)
+        clf = svm.SVC()
+        clf.fit(X_train, Y_train, class_weights = "balanced")
+        Y_pred = clf.predict(X_val)
+        print np.mean((Y_pred - Y_val)**2)
+        joblib.dump(clf, 'testing.pkl')
+    else:
+        layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias, cuda=cuda)
 
-    if prev_suffix is not None:
-        prev_weights_mmap  = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, prev_suffix),
-                                mode='r', shape=layer.weights.shape)
-        layer.weights.data[:] = torch.Tensor(prev_weights_mmap[:])
-    if cuda:
-        layer = layer.cuda()
+        if prev_suffix is not None:
+            prev_weights_mmap  = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, prev_suffix),
+                                    mode='r', shape=layer.weights.shape)
+            layer.weights.data[:] = torch.Tensor(prev_weights_mmap[:])
+        if cuda:
+            layer = layer.cuda()
 
-    #if quantile == 1:
-    #    criterion = nn.MSELoss()
-    #else:
-    #    criterion = nn.BCEWithLogitsLoss()
-    #if cuda:
-    #    criterion = criterion.cuda()
-    criterion = lambda x,y: BCELoss2d(x,y,alpha)
+        #if quantile == 1:
+        #    criterion = nn.MSELoss()
+        #else:
+        #    criterion = nn.BCEWithLogitsLoss()
+        #if cuda:
+        #    criterion = criterion.cuda()
+        criterion = lambda x,y: BCELoss2d(x,y,alpha)
 
-    optimizer = Custom_SGD(layer.parameters(), lr, momentum, l1_weight_decay=l1_weight_decay,
-                           l2_weight_decay=l2_weight_decay, nesterov=nesterov, lower_bound=lower_bound)
+        optimizer = Custom_SGD(layer.parameters(), lr, momentum, l1_weight_decay=l1_weight_decay,
+                               l2_weight_decay=l2_weight_decay, nesterov=nesterov, lower_bound=lower_bound)
 
-    results = np.zeros((8,num_epochs))
+        results = np.zeros((8,num_epochs))
 
-    for t in range(num_epochs):
-        (trn_loss, trn_set_iou, trn_ind_ious, trn_c_given_f, trn_f_given_c) = run_epoch(blobdata, conceptdata, train_idx,
-                                                          filter_i, thresh, layer, batch_size, criterion,
-                                                          optimizer, t+1, train=True, cuda=cuda,
-                                                          iou_threshold=0)
-        (val_loss, val_set_iou, val_ind_ious, val_c_given_f, val_f_given_c) = run_epoch(blobdata, conceptdata, val_idx,
-                                                          filter_i, thresh, layer, batch_size, criterion,
-                                                          optimizer, t+1, train=False, cuda=cuda,
-                                                          iou_threshold=0)
-        results[0][t] = trn_loss
-        results[1][t] = val_loss
-        results[2][t] = trn_set_iou
-        results[3][t] = val_set_iou
-        results[4][t] = trn_c_given_f
-        results[5][t] = val_c_given_f
-        results[6][t] = trn_f_given_c
-        results[7][t] = val_f_given_c
+        for t in range(num_epochs):
+            (trn_loss, trn_set_iou, trn_ind_ious, trn_c_given_f, trn_f_given_c) = run_epoch(blobdata, conceptdata, train_idx,
+                                                              filter_i, thresh, layer, batch_size, criterion,
+                                                              optimizer, t+1, train=True, cuda=cuda,
+                                                              iou_threshold=0)
+            (val_loss, val_set_iou, val_ind_ious, val_c_given_f, val_f_given_c) = run_epoch(blobdata, conceptdata, val_idx,
+                                                              filter_i, thresh, layer, batch_size, criterion,
+                                                              optimizer, t+1, train=False, cuda=cuda,
+                                                              iou_threshold=0)
+            results[0][t] = trn_loss
+            results[1][t] = val_loss
+            results[2][t] = trn_set_iou
+            results[3][t] = val_set_iou
+            results[4][t] = trn_c_given_f
+            results[5][t] = val_c_given_f
+            results[6][t] = trn_f_given_c
+            results[7][t] = val_f_given_c
 
-    ind_ious = np.zeros(N)
-    ind_ious[train_idx] = trn_ind_ious
-    ind_ious[val_idx] = val_ind_ious
+        ind_ious = np.zeros(N)
+        ind_ious[train_idx] = trn_ind_ious
+        ind_ious[val_idx] = val_ind_ious
 
-    ind_ious_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_ind_ious%s' % (filter_i, suffix),
-                                 mode='w+', shape=ind_ious.shape)
-    ind_ious_mmap[:] = ind_ious[:]
-    ed.finish_mmap(ind_ious_mmap)
+        ind_ious_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_ind_ious%s' % (filter_i, suffix),
+                                     mode='w+', shape=ind_ious.shape)
+        ind_ious_mmap[:] = ind_ious[:]
+        ed.finish_mmap(ind_ious_mmap)
 
-    results_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_results%s' % (filter_i, suffix),
-                               mode='w+', shape=results.shape)
-    results_mmap[:] = results[:]
-    ed.finish_mmap(results_mmap)
+        results_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_results%s' % (filter_i, suffix),
+                                   mode='w+', shape=results.shape)
+        results_mmap[:] = results[:]
+        ed.finish_mmap(results_mmap)
 
-    # save learned weights (and bias)
-    weights = layer.weight.data.cpu().numpy()
-    weights_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, suffix),
-                                mode='w+', shape=weights.shape)
-    weights_mmap[:] = weights[:]
-    ed.finish_mmap(weights_mmap)
+        # save learned weights (and bias)
+        weights = layer.weight.data.cpu().numpy()
+        weights_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_weights%s' % (filter_i, suffix),
+                                    mode='w+', shape=weights.shape)
+        weights_mmap[:] = weights[:]
+        ed.finish_mmap(weights_mmap)
 
-    if bias:
-        bias_v = layer.bias.data.cpu().numpy()
-        bias_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_bias%s' % (filter_i, suffix),
-                                 mode='w+', shape=(1,))
-        bias_mmap[:] = bias_v[:]
-        ed.finish_mmap(bias_mmap)
+        if bias:
+            bias_v = layer.bias.data.cpu().numpy()
+            bias_mmap = ed.open_mmap(blob=blob, part='filter_i_%d_bias%s' % (filter_i, suffix),
+                                     mode='w+', shape=(1,))
+            bias_mmap[:] = bias_v[:]
+            ed.finish_mmap(bias_mmap)
 
 if __name__ == '__main__':
     import argparse
