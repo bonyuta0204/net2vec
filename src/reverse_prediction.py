@@ -127,7 +127,7 @@ def run_epoch(blobdata, conceptdata, example_idx, filter_i, thresh, model, batch
 
 
 def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None, batch_size=64, quantile=0.005,
-                         bias=False, positive=False, svm=True, num_epochs=30, lr=1e-4, momentum=0.9,
+                         bias=False, positive=False, use_svm=True, num_examples=1000, num_epochs=30, lr=1e-4, momentum=0.9,
                          l1_weight_decay=0, l2_weight_decay=0, validation=False, nesterov=False,
                          lower_bound=None, cuda=False):
     ed = expdir.ExperimentDirectory(directory)
@@ -174,18 +174,27 @@ def reverse_linear_probe(directory, blob, filter_i, suffix='', prev_suffix=None,
     print('Alpha for filter %d: %f (%f unnorm)' % (filter_i, alpha, alpha_unnorm))
     print('# above thresh train examples for filter %d: %d' % (filter_i, len(thresh_idx)))
 
-    if svm:
-        train_subset_idx = range(1000)
-        val_subset_idx = range(1000, 2000)
+    if use_svm:
+        train_subset_idx = range(num_examples)
+        val_subset_idx = range(num_examples)
+        start = time.time()
+        print 'Selecting training data...'
         X_train = np.mean(np.mean(conceptdata[train_idx[train_subset_idx], :, 52:62, 52:62], axis=-1), axis=-1)
-        Y_train = (blobdata[train_idx[train_subset_idx], filter_i, 5, 5] > thresh).astype(float)
+        Y_train = (blobdata[train_idx[train_subset_idx], filter_i, 5, 5] > thresh).astype(int)
+        print 'Finished selecting training data in %d secs. Fitting SVM...' % (time.time() - start)
+        start = time.time()
+        clf = svm.SVC(kernel="linear", class_weight = "balanced")
+        clf.fit(X_train, Y_train)
+        print 'Finished fitting SVM in %d secs. Selecting validation data...' % (time.time() - start)
+        start = time.time()
         X_val = np.mean(np.mean(conceptdata[train_idx[val_subset_idx], :, 52:62, 52:62], axis=-1), axis=-1)
-        Y_val = (blobdata[train_idx[val_subset_idx], filter_i, 5, 5] > thresh).astype(float)
-        clf = svm.SVC()
-        clf.fit(X_train, Y_train, class_weights = "balanced")
+        Y_val = (blobdata[val_idx[val_subset_idx], filter_i, 5, 5] > thresh).astype(float)
+        print 'Finished selecting validation data in %d secs. Predicting for validation data...' % (time.time() - start)
+        start = time.time()
         Y_pred = clf.predict(X_val)
-        print np.mean((Y_pred - Y_val)**2)
-        joblib.dump(clf, 'testing.pkl')
+        print 'Finished predicting validation in %d secs.' % (time.time() - start)
+        print 'Val MSE:', np.mean((Y_pred - Y_val)**2)
+        joblib.dump(clf, os.path.join(directory, "%s-filter_i_%d_num_examples_%d.pkl" % (blob, filter_i, num_examples)))
     else:
         layer = CustomLayer(num_features=L-1, upsample=False, act=False, positive=positive, bias=bias, cuda=cuda)
 
@@ -297,6 +306,12 @@ if __name__ == '__main__':
         parser.add_argument('--bias',
                             action='store_true',
                             default=False)
+        parser.add_argument('--use_svm', 
+                            action='store_true',
+                            default=False)
+        parser.add_argument('--num_examples',
+                            type=int,
+                            default=None)
         parser.add_argument('--gpu',
                             type=int,
                             default=None)
@@ -327,6 +342,8 @@ if __name__ == '__main__':
                                      suffix=args.suffix,
                                      prev_suffix=args.prev_suffix,
                                      batch_size=args.batch_size,
+                                     use_svm=args.use_svm,
+                                     num_examples=args.num_examples,
                                      quantile=args.quantile,
                                      bias=args.bias,
                                      num_epochs=args.epochs,
