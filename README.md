@@ -6,6 +6,26 @@ Quantifying Interpretability of Deep Visual Representations.
 
 Pardon the current appearance of the repo: this code is still being developed and will be cleaned up (with more user-friendly README instructions) shortly.
 
+## Probing a Caffe/Pytorch Network
+
+First, collect network activations using either [src/netprobe.py](src/netprobe.py) to prove a Caffe network or [src/netprobe_pytorch.py](src/netprobe_pytorch.py) to probe a PyTorch network. For PyTorch networks, blobs are based on the path to the module of interest, with "." denoting entering into a nn.Module/nn.Sequential (i.e., to probe conv5 in the pytorch implementation of pytorch, pass in "features.11" as the blob name).
+
+Second, collect activation quantiles as done in NetDissect using [src/quantprobe.py](src/quantprobe.py).
+
+### Segmentation
+
+#### Single-Filter
+Run [src/labelprobe_pytorch.py](src/labelprobe_pytorch.py) to probe network activations using single filters (use this regardless of if the network was from Caffe or PyTorch; this function approximately does the same thing as the original [src/labelprobe.py](src/labelprobe.py) but we save results in a different format and have a few minor implementation differences (i.e., 1., upsampling after thresholding for consistently with the multi-filter approach, 2., upsampling bilinearly without respect to the receptive field, 3., using the BRODEN train/val split to choose the best filter, see our [paper](https://arxiv.org/abs/1801.03454) for more details).
+
+#### Multi-Filter
+Run [src/linearprobe_pytorch.py](src/linearprobe_pytorch.py) first and then [src/probelinear_pytorch.py](src/probelinear_pytorch.py).
+
+To be continued... 
+
+### Classification
+
+To be continued...
+
 # README from NetDissect
 
 You can use this code with naive [Caffe](https://github.com/BVLC/caffe), with matcaffe and pycaffe compiled. We also provide a [PyTorch wrapper](script/rundissect_pytorch.sh) to apply NetDissect to probe networks in PyTorch format. There are dissection results for several networks at the [project page](http://netdissect.csail.mit.edu/).
